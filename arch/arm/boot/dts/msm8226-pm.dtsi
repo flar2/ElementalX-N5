@@ -97,8 +97,9 @@
 		qcom,pfm-port = <0x2>;
 		qcom,saw2-spm-cmd-ret = [00 03 00 7b 0f];
 		qcom,saw2-spm-cmd-pc = [00 32 b0 10 e0 d0 6b c0 42 f0
-				11 07 01 b0 4e c0 d0 12 e0 6b 50 02 32
-				50 f0 7b 0f]; /*APCS_PMIC_OFF_L2RAM_OFF*/
+				11 07 01 b0 50 4e 02 02 c0 d0 12 e0 6b 02 32
+				50 f0 0f]; /*APCS_PMIC_OFF_L2RAM_OFF*/
+		qcom,L2-spm-is-apcs-master;
 	};
 
 	qcom,lpm-levels {
