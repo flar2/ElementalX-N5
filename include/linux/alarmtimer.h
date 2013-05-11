@@ -51,6 +51,7 @@ int alarm_cancel(struct alarm *alarm);
 void set_power_on_alarm(long secs, bool enable);
 
 u64 alarm_forward(struct alarm *alarm, ktime_t now, ktime_t interval);
+u64 alarm_forward_now(struct alarm *alarm, ktime_t interval);
 
 /*
  * A alarmtimer is active, when it is enqueued into timerqueue or the
