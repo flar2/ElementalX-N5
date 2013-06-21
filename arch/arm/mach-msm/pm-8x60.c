@@ -33,7 +33,6 @@
 #include <linux/of_platform.h>
 #include <linux/regulator/krait-regulator.h>
 #include <linux/cpu.h>
-#include <linux/clk.h>
 #include <mach/msm_iomap.h>
 #include <mach/socinfo.h>
 #include <mach/system.h>
@@ -138,7 +137,6 @@ static bool msm_pm_retention_calls_tz;
 static bool msm_no_ramp_down_pc;
 static struct msm_pm_sleep_status_data *msm_pm_slp_sts;
 static bool msm_pm_pc_reset_timer;
-static struct clk *pnoc_clk;
 
 DEFINE_PER_CPU(struct clk *, cpu_clks);
 static struct clk *l2_clk;
@@ -1202,18 +1200,12 @@ void msm_pm_set_sleep_ops(struct msm_pm_sleep_ops *ops)
 
 int msm_suspend_prepare(void)
 {
-	if (pnoc_clk != NULL)
-		clk_disable_unprepare(pnoc_clk);
-
 	suspend_time = msm_pm_timer_enter_suspend(&suspend_period);
 	return 0;
 }
 
 void msm_suspend_wake(void)
 {
-	if (pnoc_clk != NULL)
-		clk_prepare_enable(pnoc_clk);
-
 	if (suspend_power_collapsed) {
 		suspend_time = msm_pm_timer_exit_suspend(suspend_time,
 				suspend_period);
@@ -1229,8 +1221,6 @@ void msm_suspend_wake(void)
 static const struct platform_suspend_ops msm_pm_ops = {
 	.enter = msm_pm_enter,
 	.valid = suspend_valid_only_mem,
-	.prepare_late = msm_suspend_prepare,
-	.wake = msm_suspend_wake,
 };
 
 static int __devinit msm_pm_snoc_client_probe(struct platform_device *pdev)
@@ -1762,18 +1752,6 @@ static int __init msm_pm_8x60_init(void)
 		pr_err("%s(): failed to register driver %s\n", __func__,
 				msm_cpu_pm_snoc_client_driver.driver.name);
 		return rc;
-	}
-
-	pnoc_clk = clk_get_sys("pm_8x60", "bus_clk");
-
-	if (IS_ERR(pnoc_clk))
-		pnoc_clk = NULL;
-	else {
-		clk_set_rate(pnoc_clk, 19200000);
-		rc = clk_prepare_enable(pnoc_clk);
-
-		if (rc)
-			pr_err("%s: PNOC clock enable failed\n", __func__);
 	}
 
 	return platform_driver_register(&msm_pm_8x60_driver);
