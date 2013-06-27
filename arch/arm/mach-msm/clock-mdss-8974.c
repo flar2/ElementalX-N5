@@ -871,6 +871,8 @@ static int dsi_pll_lock_status(void)
 	u32 status;
 	int pll_locked = 0;
 
+	dsi_pll_toggle_lock_detect();
+
 	/* poll for PLL ready status */
 	if (readl_poll_timeout_noirq((mdss_dsi_base +
 			DSI_0_PHY_PLL_UNIPHY_PLL_STATUS),
