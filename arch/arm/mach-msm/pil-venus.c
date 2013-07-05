@@ -572,6 +572,8 @@ static int __devinit pil_venus_probe(struct platform_device *pdev)
 	if (!drv->ramdump_dev)
 		return -ENOMEM;
 
+	scm_pas_init(MSM_BUS_MASTER_CRYPTO_CORE0);
+
 	rc = pil_desc_init(desc);
 	if (rc)
 		goto err_ramdump;
