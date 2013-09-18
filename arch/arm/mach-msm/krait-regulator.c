@@ -1547,6 +1547,12 @@ void secondary_cpu_hs_init(void *base_ptr)
 	uint32_t reg_val;
 	void *l2_saw_base;
 
+	if (version == 0) {
+		gcc_base_ptr = ioremap_nocache(GCC_BASE, SZ_4K);
+		version = readl_relaxed(gcc_base_ptr + VERSION);
+		iounmap(gcc_base_ptr);
+	}
+
 	/* Turn on the BHS, turn off LDO Bypass and power down LDO */
 	reg_val =  BHS_CNT_DEFAULT << BHS_CNT_BIT_POS
 		| LDO_PWR_DWN_MASK
