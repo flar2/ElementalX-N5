@@ -82,6 +82,12 @@ static int q6asm_map_channels(u8 *channel_mapping, uint32_t channels);
 void *q6asm_mmap_apr_reg(void);
 
 
+/* for ASM custom topology */
+static struct audio_buffer common_buf;
+static struct audio_client common_client;
+static int set_custom_topology;
+static int topology_map_handle;
+
 #ifdef CONFIG_DEBUG_FS
 #define OUT_BUFFER_SIZE 56
 #define IN_BUFFER_SIZE 24
@@ -99,10 +105,6 @@ static int in_cont_index;
 static int out_cold_index;
 static char *out_buffer;
 static char *in_buffer;
-static struct audio_buffer common_buf;
-static struct audio_client common_client;
-static int set_custom_topology;
-static int topology_map_handle;
 
 
 int q6asm_mmap_apr_dereg(void)
