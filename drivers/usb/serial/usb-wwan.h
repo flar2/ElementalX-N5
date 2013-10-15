@@ -33,10 +33,10 @@ extern int usb_wwan_resume(struct usb_serial *serial);
 
 /* per port private data */
 
-#define N_IN_URB 5
-#define N_OUT_URB 5
-#define IN_BUFLEN 16384
-#define OUT_BUFLEN 65536
+#define N_IN_URB 4
+#define N_OUT_URB 4
+#define IN_BUFLEN 4096
+#define OUT_BUFLEN 4096
 
 struct usb_wwan_intf_private {
 	spinlock_t susp_lock;
