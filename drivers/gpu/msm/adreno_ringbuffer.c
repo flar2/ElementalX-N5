@@ -1141,6 +1141,9 @@ adreno_ringbuffer_issueibcmds(struct kgsl_device_private *dev_priv,
 
 	device->flags &= ~KGSL_FLAG_WAKE_ON_TOUCH;
 
+	/* wait for the suspend gate */
+	wait_for_completion(&device->cmdbatch_gate);
+
 	/* Queue the command in the ringbuffer */
 	ret = adreno_dispatcher_queue_cmd(adreno_dev, drawctxt, cmdbatch,
 		timestamp);
