@@ -874,7 +874,7 @@ static int sns_ocmem_map_send(void)
 
 	vectors = ocmem_get_vectors(SNS_OCMEM_CLIENT_ID, sns_ctl.buf);
 	if ((vectors != NULL)) {
-		memcpy(&msg.vectors, vectors, sizeof(vectors));
+		memcpy(&msg.vectors, vectors, sizeof(*vectors));
 		/* TODO: set vectors_len */
 		msg.vectors_valid = true;
 		msg.vectors_len = 0;
