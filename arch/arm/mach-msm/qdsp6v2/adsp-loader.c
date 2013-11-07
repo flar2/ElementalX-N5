@@ -1,0 +1,225 @@
+/*
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/err.h>
+#include <linux/delay.h>
+#include <linux/platform_device.h>
+#include <mach/subsystem_restart.h>
+#include <mach/qdsp6v2/apr.h>
+#include <linux/of_device.h>
+#include <linux/sysfs.h>
+
+#define Q6_PIL_GET_DELAY_MS 100
+#define BOOT_CMD 1
+
+static ssize_t adsp_boot_store(struct kobject *kobj,
+		struct kobj_attribute *attr,
+		const char *buf, size_t count);
+
+struct adsp_loader_private {
+	void *pil_h;
+	struct kobject *boot_adsp_obj;
+	struct attribute_group *attr_group;
+	u32 adsp_state;
+};
+
+static struct kobj_attribute adsp_boot_attribute =
+	__ATTR(boot, 0220, NULL, adsp_boot_store);
+static struct attribute *attrs[] = {
+	&adsp_boot_attribute.attr,
+	NULL,
+};
+
+static struct platform_device *adsp_private = NULL;
+
+static void adsp_loader_do(struct platform_device *pdev)
+{
+	struct adsp_loader_private *priv = platform_get_drvdata(pdev);
+	int rc = 0;
+	if (priv->adsp_state == APR_SUBSYS_DOWN) {
+		priv->pil_h = subsystem_get("adsp");
+		if (IS_ERR(priv->pil_h)) {
+			pr_err("%s: pil get adsp failed, error:%d\n",
+				__func__, rc);
+			devm_kfree(&pdev->dev, priv);
+			goto fail;
+		}
+
+		/* Set the state of the ADSP in APR driver */
+		apr_set_q6_state(APR_SUBSYS_LOADED);
+	}
+
+	pr_info("%s: Q6/ADSP image is loaded\n", __func__);
+	return;
+fail:
+	pr_err("%s: Q6/ADSP image loading failed\n", __func__);
+}
+
+static ssize_t adsp_boot_store(struct kobject *kobj,
+		struct kobj_attribute *attr,
+		const char *buf,
+		size_t count)
+{
+	int boot = 0;
+
+	sscanf(buf, "%du", &boot);
+	if (boot == BOOT_CMD) {
+		pr_info("%s:going to call adsp_loader_do", __func__);
+		adsp_loader_do(adsp_private);
+	}
+	return count;
+}
+
+static int adsp_loader_init_sysfs(struct platform_device *pdev)
+{
+	int ret = -EINVAL;
+	struct adsp_loader_private *priv = NULL;
+	const char *adsp_dt = "qcom,adsp-state";
+	u32 adsp_state;
+
+	ret = of_property_read_u32(pdev->dev.of_node, adsp_dt, &adsp_state);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"%s: ADSP state = %x\n", __func__, adsp_state);
+		return ret;
+	}
+
+	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv) {
+		dev_err(&pdev->dev,
+				"%s: out of memory\n", __func__);
+		return -ENOMEM;
+	}
+
+	platform_set_drvdata(pdev, priv);
+	priv->adsp_state = adsp_state;
+
+	if (adsp_state == APR_SUBSYS_DOWN) {
+		priv->attr_group = devm_kzalloc(&pdev->dev,
+				sizeof(*(priv->attr_group)),
+				GFP_KERNEL);
+		if (!priv->attr_group) {
+			pr_err("%s: malloc attr_group failed\n",
+					__func__);
+			goto error_return;
+		}
+
+		priv->attr_group->attrs = attrs;
+
+		priv->boot_adsp_obj = kobject_create_and_add("boot_adsp",
+				kernel_kobj);
+		if (!priv->boot_adsp_obj) {
+			pr_err("%s: sysfs create and add failed\n",
+					__func__);
+			goto error_return;
+		}
+
+		ret = sysfs_create_group(priv->boot_adsp_obj, priv->attr_group);
+		if (ret) {
+			pr_err("%s: sysfs create group failed %d\n",
+					__func__, ret);
+			goto error_return;
+		}
+
+	} else if (adsp_state == APR_SUBSYS_LOADED) {
+		dev_dbg(&pdev->dev,
+			"%s:MDM9x25 ADSP state = %x\n", __func__, adsp_state);
+		apr_set_q6_state(APR_SUBSYS_LOADED);
+	}
+
+	adsp_private = pdev;
+
+	return 0;
+
+error_return:
+	if (priv->attr_group) {
+		devm_kfree(&pdev->dev, priv->attr_group);
+		priv->attr_group = NULL;
+	}
+
+	if (priv->boot_adsp_obj) {
+		kobject_del(priv->boot_adsp_obj);
+		priv->boot_adsp_obj = NULL;
+	}
+	return ret;
+}
+
+static int adsp_loader_probe(struct platform_device *pdev)
+{
+	int ret = adsp_loader_init_sysfs(pdev);
+	if (ret != 0) {
+		pr_err("Error in initing sysfs\n");
+		return ret;
+	}
+	return 0;
+}
+
+static int adsp_loader_remove(struct platform_device *pdev)
+{
+	struct adsp_loader_private *priv= platform_get_drvdata(pdev);
+
+	if (priv != NULL)
+		subsystem_put(priv->pil_h);
+
+	if (priv->boot_adsp_obj) {
+		sysfs_remove_group(priv->boot_adsp_obj, priv->attr_group);
+		kobject_del(priv->boot_adsp_obj);
+		priv->boot_adsp_obj = NULL;
+	}
+
+	if (priv->attr_group) {
+		devm_kfree(&pdev->dev, priv->attr_group);
+		priv->attr_group = NULL;
+	}
+
+	devm_kfree(&pdev->dev, priv);
+	adsp_private = NULL;
+
+	pr_info("%s: Q6/ADSP image is unloaded\n", __func__);
+
+	return 0;
+}
+
+static const struct of_device_id adsp_loader_dt_match[] = {
+	{ .compatible = "qcom,adsp-loader" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, adsp_loader_dt_match);
+
+static struct platform_driver adsp_loader_driver = {
+	.driver = {
+		.name = "adsp-loader",
+		.owner = THIS_MODULE,
+		.of_match_table = adsp_loader_dt_match,
+	},
+	.probe = adsp_loader_probe,
+	.remove = __devexit_p(adsp_loader_remove),
+};
+
+static int __init adsp_loader_init(void)
+{
+	return platform_driver_register(&adsp_loader_driver);
+}
+module_init(adsp_loader_init);
+
+static void __exit adsp_loader_exit(void)
+{
+	platform_driver_unregister(&adsp_loader_driver);
+}
+module_exit(adsp_loader_exit);
+
+MODULE_DESCRIPTION("ADSP Loader module");
+MODULE_LICENSE("GPL v2");

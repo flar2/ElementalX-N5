@@ -1,0 +1,86 @@
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/include/ "../msm8974-leds.dtsi"
+
+/include/ "msm8974-lge-panel.dtsi"
+/include/ "msm8974-lge-input.dtsi"
+/include/ "msm8974-lge-hdmi.dtsi"
+/include/ "msm8974-lge-usb.dtsi"
+/include/ "msm8974-lge-misc.dtsi"
+/include/ "msm8974-lge-pm.dtsi"
+
+&soc {
+	serial@f991d000 {
+		compatible = "qcom,msm-lsuart-v14";
+		reg = <0xf991d000 0x1000>;
+		interrupts = <0 107 0>;
+		status = "disabled";
+
+		qcom,msm-bus,name = "serial_uart1";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,active-only = <0>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+			<86 512 0 0>,
+			<86 512 500 800>;
+	};
+
+	uart10: uart@f9960000 { /*BLSP2, UART10 For Bluetooth*/
+		compatible = "qcom,msm-hsuart-v14";
+		status = "disabled";
+		reg = <0xf9960000 0x1000>,
+			<0xf9944000 0x19000>;
+		reg-names = "core_mem", "bam_mem";
+		interrupts = <0 116 0>, <0 239 0>;
+		interrupt-names = "core_irq", "bam_irq";
+
+		qcom,tx-gpio = <&msmgpio 53 0x00>;
+		qcom,rx-gpio = <&msmgpio 54 0x00>;
+		qcom,cts-gpio = <&msmgpio 55 0x00>;
+		qcom,rfr-gpio = <&msmgpio 56 0x00>;
+
+		qcom,bam-tx-ep-pipe-index = <6>;
+		qcom,bam-rx-ep-pipe-index = <7>;
+
+		qcom,msm-bus,name = "uart10";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,active-only = <0>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<84 512 0 0>,
+				<84 512 500 800>;
+	};
+};
+
+&spmi_bus {
+	qcom,pm8941@0 {
+		qcom,power-on@800 {
+			qcom,pon_2 {
+				qcom,disable = <1>;
+			};
+		};
+	};
+};
+
+&i2c_0 {
+	qcom,active-only;
+};
+
+&i2c_1 {
+	qcom,active-only;
+	status = "ok";
+};
+
+&i2c_2 {
+	qcom,active-only;
+};

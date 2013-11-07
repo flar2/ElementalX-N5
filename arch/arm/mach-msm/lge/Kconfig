@@ -1,0 +1,28 @@
+config MACH_LGE
+	bool
+
+menu "LGE Board Selection"
+
+config MACH_MSM8974_HAMMERHEAD
+	depends on ARCH_MSM8974
+	select MACH_LGE
+	bool "MSM8974 HAMMERHEAD"
+	help
+	  Support for the LGE MSM8974 HAMMERHEAD.
+
+endmenu
+
+menu "LGE Specific Patches"
+
+config LGE_HANDLE_PANIC
+	tristate "Support LGE Kernel Crash Handler"
+	depends on MACH_LGE
+	help
+	  Support for the LGE Crash Handler
+
+config LGE_BLUETOOTH
+	bool "Support LGE Bluetooth"
+	depends on BT
+	help
+	  Support for the LGE Bluetooth
+endmenu

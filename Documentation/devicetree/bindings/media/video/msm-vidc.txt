@@ -1,0 +1,79 @@
+* Qualcomm MSM VIDC
+
+Required properties:
+- compatible : one of:
+	- "qcom,msm-vidc"
+- qcom,hfi : supported Host-Firmware Interface, one of:
+	- "venus"
+	- "q6"
+- qcom,max-hw-load: The maximum load the hardware can support expressed in units
+  of macroblocks per second.
+
+Optional properties:
+- reg : offset and length of the register set for the device.
+- interrupts : should contain the vidc interrupt.
+- qcom,vidc-cp-map : start and size of device virtual address range for
+  secure buffers. Video hardware uses this address range to identify if
+  the buffers are secure or non-secure.
+- qcom,vidc-ns-map : start and size of device virtual address range for
+  non-secure buffers. Video hardware uses this address range to identify
+  if the buffers are secure or non-secure.
+- qcom,load-freq-tbl : load (in macroblocks/sec) and corresponding vcodec
+  clock required for optimal performance in descending order.
+- qcom,reg-presets : list of offset-value pairs for registers to be written.
+  The offsets are from the base offset specified in 'reg'. This is mainly
+  used for QoS, vbif, etc. presets for video.
+- qcom,bus-ports : number of bus ports supported by venus to access
+  ddr/ocmem.
+- qcom,enc-ocmem-ab-ib : list of bus vectors (ab, ib pair) for ocmem
+  bandwidth request by different video encoder usecases.
+- qcom,dec-ocmem-ab-ib : list of bus vectors(ab, ib pair) for ocmem
+  bandwidth request by different video decoder usecases.
+- qcom,enc-ddr-ab-ib : list of bus vectors(ab,ib pair) for ddr bandwidth
+  request by different video encoder usecases.
+- qcom,dec-ddr-ab-ib : list of bus vectors(ab, ib pair) for ddr bandwidth
+  request by different video decoder usecases.
+- qcom,iommu-groups : list of IOMMU groups to be used.  Groups are defined as
+  phandles in <target>-iommu-domains.dtsi (e.g msm8974-v1-iommu-domains.dtsi)
+- qcom,iommu-group-buffer-types : bitmap of buffer types that can be mapped into
+  the corresponding IOMMU group. Buffer types are defined within the vidc driver
+  by "enum hal_buffer" in msm_smem.h
+- qcom,buffer-type-tz-usage-table : a key-value pair, mapping a buffer type
+  (enum hal_buffer) to its corresponding TZ usage. The TZ usages are defined
+  as "enum cp_mem_usage" in include/linux/msm_ion.h
+- qcom,has-ocmem: indicate the target has ocmem if this property exists
+
+Example:
+
+
+	qcom,vidc@fdc00000 {
+		compatible = "qcom,msm-vidc";
+		reg = <0xfdc00000 0xff000>;
+		interrupts = <0 44 0>;
+		qcom,vidc-cp-map = <0x1000000 0x40000000>;
+		qcom,vidc-ns-map = <0x40000000 0x40000000>;
+		qcom,load-freq-tbl = <979200 410000000>,
+				<560145 266670000>,
+				<421161 200000000>,
+				<243000 133330000>,
+				<108000 100000000>,
+				<36000 50000000>;
+		qcom,has-ocmem;
+		qcom,hfi = "venus";
+		qcom,reg-presets = <0x80004 0x1>,
+			<0x80178 0x00001FFF>;
+		qcom,bus-ports = <1>;
+		qcom,enc-ocmem-ab-ib = <0 0>,
+			<138200 1222000>;
+		qcom,dec-ocmem-ab-ib = <0 0>,
+			<176900 1556640>;
+		qcom,enc-ddr-ab-ib = <0 0>,
+			<60000 664950>;
+		qcom,dec-ddr-ab-ib = <0 0>,
+			<110000 909000>;
+		qcom,iommu-groups = <&venus_domain_ns &venus_domain_cp>;
+		qcom,iommu-group-buffer-types = <0xfff 0x1ff>;
+		qcom,buffer-type-tz-usage-table = <0x1 0x1>,
+						<0x1fe 0x2>;
+		qcom,max-hw-load = <1224450>; /* 4k @ 30 + 1080p @ 30*/
+	};

@@ -1,0 +1,92 @@
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/include/ "msm8974-hammerhead.dtsi"
+
+&soc {
+        i2c@f9923000 {
+                smb349@2d {
+                        status = "ok";
+                };
+
+                bq24192@6b {
+                        status = "disabled";
+                };
+        };
+
+	i2c@f9924000 {
+		synaptics_s7020@20 {
+			status = "ok";
+		};
+	};
+
+	i2c@f9967000 {
+		lm3630@38 {
+			lm3630,lcd_bl_en = <&msmgpio 91 0x00>;
+		};
+	};
+
+	qcom,cci@fda0C000 {
+		qcom,camera@20 {
+			gpios = <&msmgpio 15 0>,  // MCLK
+			        <&msmgpio 90 0>,  // MAIN_CAM_RESET
+				<&msmgpio 16 0>,  // 13M_VANA_EN
+				<&msmgpio 96 0>,  // 13M_VIO_EN
+				<&msmgpio 57 0>,  // 13M_VCM_EN
+				<&msmgpio 145 0>, // OIS_LDO_EN
+				<&msmgpio 29 0>;  // OIS_RESET
+		};
+	};
+
+	qcom,mdss_dsi_lgit_video {
+		status = "ok";
+		qcom,cont-splash-enabled;
+	};
+
+	maxim_detic:maxim_max1462x {
+		status = "disabled";
+	};
+
+	sound {
+		qcom,mbhc-disabled = <0>;
+	};
+
+	vibrator {
+		motor-amp = <50>;
+	};
+};
+
+&sdcc2 {
+	interrupt-map = <0 &intc 0 125 0
+		1 &intc 0 220 0
+		2 &msmgpio 74 0x3>;
+};
+
+&sdhc_1 {
+	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000>;
+	qcom,bus-speed-mode = "DDR_1p8v";
+	qcom,msm-bus,num-cases = <7>;
+	/* XXX: No 200 MB/s */
+	qcom,msm-bus,vectors-KBps = <78 512 0 0>, /* No vote */
+		<78 512 1600 3200>,    /* 400 KB/s*/
+		<78 512 80000 160000>, /* 20 MB/s */
+		<78 512 100000 200000>, /* 25 MB/s */
+		<78 512 200000 400000>, /* 50 MB/s */
+		<78 512 400000 800000>, /* 100 MB/s */
+		<78 512 2048000 4096000>; /* Max. bandwidth */
+	qcom,bus-bw-vectors-bps = <0 400000 20000000 25000000 50000000 100000000 4294967295>;
+	status = "ok";
+};
+
+&pm8941_l22 {
+	qcom,init-voltage = <3000000>;
+};

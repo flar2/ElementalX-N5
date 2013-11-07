@@ -1,0 +1,416 @@
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 and
+* only version 2 as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*/
+
+
+&soc {
+	i2c@f9923000 {
+		cell-index = <84>;
+		compatible = "qcom,i2c-qup";
+		reg = <0xf9923000 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg-names = "qup_phys_addr";
+		interrupts = <0 95 0>;
+		interrupt-names = "qup_err_intr";
+		qcom,i2c-bus-freq = <100000>;
+		qcom,i2c-src-freq = <50000000>;
+
+		max17048@36 {
+			compatible = "maxim,max17048";
+			status = "disabled";
+			interrupt-parent = <&msmgpio>;
+			interrupts = <9 0x0>;
+			reg = <0x36>;
+			max17048,alert_gpio = <&msmgpio 9 0x00>;
+			max17048,rcomp = <77>;
+			max17048,rcomp-co-hot = <700>;
+			max17048,rcomp-co-cold = <5225>;
+			max17048,alert_threshold = <2>;
+			max17048,max-mvolt = <4350>;
+			max17048,min-mvolt = <3200>;
+			max17048,full-soc = <970>;
+			max17048,empty-soc = <10>;
+			max17048,batt-tech = <2>;
+			max17048,fcc-mah = <2300>;
+		};
+
+		smb349@2d {
+			compatible = "summit,smb349-charger";
+			reg = <0x2d>; /* 0x5A/0x5B */
+			status = "disabled";
+			interrupt-parent = <&pm8941_gpios>;
+			interrupts = <30 0x2>;
+			summit,stat-gpio = <&pm8941_gpios 30 0x02>;
+			summit,chg-current-ma = <1200>;
+			summit,term-current-ma = <100>;
+			summit,otg-en-gpio = <&pm8941_gpios 35 0x2>;
+			summit,wlc-support;
+			summit,ext-ovp-otg-ctrl;
+		};
+
+		bq24192@6b {
+			compatible = "ti,bq24192-charger";
+			status = "disabled";
+			reg = <0x6b>;
+			interrupt-parent = <&pm8941_gpios>;
+			interrupts = <22 0x2>;
+			ti,int-gpio = <&pm8941_gpios 22 0x02>;
+			ti,chg-current-ma = <1600>;
+			ti,term-current-ma = <128>;
+			ti,vbat-max-mv = <4352>;
+			ti,pre-chg-current-ma = <256>;
+			ti,sys-vimin-mv = <3500>;
+			ti,vin-limit-mv = <4600>;
+			ti,wlc-vin-limit-mv = <4840>;
+			ti,step-dwn-current-ma = <1024>;
+			ti,step-dwn-thr-mv = <4250>;
+			ti,wlc-support;
+			ti,otg-en-gpio = <&pm8941_gpios 35 0x02>;
+			ti,ext-ovp-otg-ctrl;
+			ti,icl-vbus-mv = <4650>;
+			ti,wlc-step-dwn-i-ma = <512>;
+			ti,wlc-dwn-input-i-ma = <500>;
+		};
+	};
+
+	bq51013b_wlc {
+		compatible = "ti,bq51013b";
+		status = "ok";
+		interrupt-parent = <&pm8941_gpios>;
+		interrupts = <34 0x3>;
+		ti,chg-ctrl-gpio = <&pm8941_gpios 23 0x0>;
+		ti,wlc-int-gpio = <&pm8941_gpios 34 0x2>;
+		ti,chg-current-ma = <704>;
+	};
+
+	battery_tm_ctrl {
+		compatible = "battery_tm_ctrl";
+		status = "ok";
+		tm,low-vbatt-mv = <4100>;
+		tm,low-current-ma = <512>;
+		tm,warm-cfg-size = <4>;
+		tm,warm-cfg = <
+			2680 0 2630 3180 1
+			3180 1 3160 3280 2
+			3280 2 3160 3330 2
+			3330 2 3160 3520 2>;
+		tm,cold-cfg-size = <2>;
+		tm,cold-cfg = <
+			2630 2 2430 2680 6
+			3160 0 2630 3180 1>;
+	};
+
+};
+
+&spmi_bus {
+	qcom,pm8941@0 {
+		iadc@3600 {
+			chan@1 {
+				label = "external_rsense";
+				reg = <1>;
+				qcom,rsense = <10000000>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <1>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+		};
+
+		vadc@3100 {
+			chan@15 {
+				label="earmic_adc";
+				reg = <0x15>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <0>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+			};
+		};
+
+		qcom,vadc@3400 {
+			usb-id-ext-pull-up;
+			chan@b9 {
+				label = "usb_id_nopull";
+				reg = <0x39>;
+			};
+
+			chan@30 {
+				qcom,hw-settle-time = <0xf>;
+			};
+
+		};
+
+	        adcmap_table {
+			compatible = "qcom,adcmap_table";
+			status = "ok";
+			qcom,adcmap_btm_data_num = <110>;
+			qcom,adcmap_btm_threshold = <
+				1 0 300 1669
+				1 0 290 1662
+				1 0 280 1653
+				1 0 270 1644
+				1 0 260 1635
+				1 0 250 1626
+				1 0 240 1616
+				1 0 230 1605
+				1 0 220 1594
+				1 0 210 1583
+				1 0 200 1572
+				1 0 190 1560
+				1 0 180 1547
+				1 0 170 1534
+				1 0 160 1521
+				1 0 150 1507
+				1 0 140 1493
+				1 0 130 1478
+				1 0 120 1463
+				1 0 110 1448
+				1 0 100 1432
+				1 0 90 1415
+				1 0 80 1399
+				1 0 70 1382
+				1 0 60 1365
+				1 0 50 1347
+				1 0 40 1329
+				1 0 30 1311
+				1 0 20 1293
+				1 0 10 1274
+				0 0 0  1255
+				0 0 10 1236
+				0 0 20 1217
+				0 0 30 1198
+				0 0 40 1179
+				0 0 50 1159
+				0 0 60 1140
+				0 0 70 1120
+				0 0 80 1101
+				0 0 90 1081
+				0 0 100 1062
+				0 0 110 1042
+				0 0 120 1023
+				0 0 130 1004
+				0 0 140 985
+				0 0 150 966
+				0 0 160 947
+				0 0 170 929
+				0 0 180 910
+				0 0 190 892
+				0 0 200 874
+				0 0 210 857
+				0 0 220 840
+				0 0 230 823
+				0 0 240 806
+				0 0 250 790
+				0 0 260 774
+				0 0 270 758
+				0 0 280 743
+				0 0 290 728
+				0 0 300 713
+				0 0 310 699
+				0 0 320 685
+				0 0 330 671
+				0 0 340 658
+				0 0 350 645
+				0 0 360 632
+				0 0 370 620
+				0 0 380 608
+				0 0 390 597
+				0 0 400 585
+				0 0 410 574
+				0 0 420 564
+				0 0 430 554
+				0 0 440 544
+				0 0 450 534
+				0 0 460 525
+				0 0 470 516
+				0 0 480 507
+				0 0 490 498
+				0 0 500 490
+				0 0 510 482
+				0 0 520 475
+				0 0 530 467
+				0 0 540 460
+				0 0 550 453
+				0 0 560 446
+				0 0 570 440
+				0 0 580 434
+				0 0 590 428
+				0 0 600 422
+				0 0 610 416
+				0 0 620 411
+				0 0 630 405
+				0 0 640 400
+				0 0 650 395
+				0 0 660 391
+				0 0 670 386
+				0 0 680 382
+				0 0 690 377
+				0 0 700 373
+				0 0 710 369
+				0 0 720 366
+				0 0 730 362
+				0 0 740 358
+				0 0 750 355
+				0 0 760 352
+				0 0 770 348
+				0 0 780 345
+				0 0 790 342>;
+
+			qcom,adcmap_qrd_btm_data_num = <51>;
+			qcom,adcmap_qrd_btm_threshold = <
+				1 0 200 1672
+				1 0 180 1656
+				1 0 160 1639
+				1 0 140 1620
+				1 0 120 1599
+				1 0 100 1577
+				1 0 80 1553
+				1 0 60 1527
+				1 0 40 1550
+				1 0 20 1471
+				0 0 0 1440
+				0 0 20 1408
+				0 0 40 1374
+				0 0 60 1339
+				0 0 80 1303
+				0 0 100 1266
+				0 0 120 1228
+				0 0 140 1190
+				0 0 160 1150
+				0 0 180 1111
+				0 0 200 1071
+				0 0 220 1032
+				0 0 240 992
+				0 0 260 953
+				0 0 280 915
+				0 0 300 877
+				0 0 320 841
+				0 0 340 805
+				0 0 360 770
+				0 0 380 736
+				0 0 400 704
+				0 0 420 673
+				0 0 440 643
+				0 0 460 614
+				0 0 480 587
+				0 0 500 561
+				0 0 520 536
+				0 0 540 513
+				0 0 560 491
+				0 0 580 470
+				0 0 600 450
+				0 0 620 431
+				0 0 640 414
+				0 0 660 397
+				0 0 680 382
+				0 0 700 367
+				0 0 720 353
+				0 0 740 340
+				0 0 760 328
+				0 0 780 317
+				0 0 800 306>;
+
+			qcom,adcmap_adcmap_100k_data_num = <34>;
+			qcom,adcmap_100k_104ef_104fb = <
+				0 1 1758 40
+				0 1 1742 35
+				0 1 1719 30
+				0 1 1691 25
+				0 1 1654 20
+				0 1 1608 15
+				0 1 1551 10
+				0 1 1483 5
+				0 0 1404 0
+				0 0 1315 5
+				0 0 1218 10
+				0 0 1114 15
+				0 0 1007 20
+				0 0 900 25
+				0 0 795 30
+				0 0 696 35
+				0 0 605 40
+				0 0 522 45
+				0 0 448 50
+				0 0 383 55
+				0 0 327 60
+				0 0 278 65
+				0 0 237 70
+				0 0 202 75
+				0 0 172 80
+				0 0 146 85
+				0 0 125 90
+				0 0 107 95
+				0 0 92 100
+				0 0 79 105
+				0 0 68 110
+				0 0 59 115
+				0 0 51 120
+				0 0 44 125>;
+
+			qcom,adcmap_adcmap_150k_data_num = <34>;
+			qcom,adcmap_150k_104ef_104fb = <
+				0 1 1738 40
+				0 1 1714 35
+				0 1 1682 30
+				0 1 1641 25
+				0 1 1589 20
+				0 1 1526 15
+				0 1 1451 10
+				0 1 1363 5
+				0 0 1266 0
+				0 0 1159 5
+				0 0 1048 10
+				0 0 936 15
+				0 0 825 20
+				0 0 720 25
+				0 0 622 30
+				0 0 533 35
+				0 0 454 40
+				0 0 385 45
+				0 0 326 50
+				0 0 275 55
+				0 0 232 60
+				0 0 195 65
+				0 0 165 70
+				0 0 139 75
+				0 0 118 80
+				0 0 100 85
+				0 0 85 90
+				0 0 73 95
+				0 0 62 100
+				0 0 53 105
+				0 0 46 110
+				0 0 40 115
+				0 0 34 120
+				0 0 30 125>;
+		};
+	};
+};
+
+&pm8941_chg {
+	status = "ok";
+	qcom,use-only-smbb-boost;
+	qcom,chgr-base = <0x1000>;
+	qcom,usb-chgpth-base = <0x1300>;
+
+	qcom,boost@1500 {
+		status = "ok";
+	};
+
+	qcom,chg-misc@1600 {
+		status = "ok";
+	};
+};

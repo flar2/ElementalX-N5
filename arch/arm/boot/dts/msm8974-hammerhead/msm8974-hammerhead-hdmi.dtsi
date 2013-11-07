@@ -1,0 +1,33 @@
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&soc {
+	i2c@f9967000 {
+		analogix_anx7808@72 {
+			compatible = "analogix,anx7808";
+			status = "disable";
+			reg = <0x72>;
+			interrupt-parent = <&pm8941_gpios>;
+			interrupts = <13 0>; /* cbl-det-gpio is interrupt pin */
+			analogix,reset-gpio = <&msmgpio 68 0x00>;
+			analogix,irq-gpio = <&msmgpio 28 0x00>;
+			analogix,p-dwn-gpio = <&pm8941_gpios 14 0x0>;
+			analogix,cbl-det-gpio = <&pm8941_gpios 13 0x0>;
+			analogix,i2c-pull-up = <1>;
+			vdd-1p0-supply = <&anx7808_vdd10_vreg>;
+			avdd-3p3-supply = <&anx7808_avdd33_vreg>;
+			analogix,vdd10-name = "vdd-1p0";
+			analogix,avdd33-name = "avdd-3p3";
+			analogix,hdmi-tx-map = <&mdss_hdmi_tx>;
+		};
+	};
+};
