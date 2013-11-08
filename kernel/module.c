@@ -868,7 +868,7 @@ static inline void print_unload_info(struct seq_file *m, struct module *mod)
 
 void __symbol_put(const char *symbol)
 {
-	struct module *owner;
+	struct module *owner = NULL;
 
 	preempt_disable();
 	if (!find_symbol(symbol, &owner, NULL, true, false))
@@ -1200,7 +1200,7 @@ static const struct kernel_symbol *resolve_symbol(struct module *mod,
 						  const char *name,
 						  char ownername[])
 {
-	struct module *owner;
+	struct module *owner = NULL;
 	const struct kernel_symbol *sym;
 	const unsigned long *crc;
 	int err;
@@ -1838,7 +1838,7 @@ static void free_module(struct module *mod)
 
 void *__symbol_get(const char *symbol)
 {
-	struct module *owner;
+	struct module *owner = NULL;
 	const struct kernel_symbol *sym;
 
 	preempt_disable();
@@ -1860,7 +1860,7 @@ EXPORT_SYMBOL_GPL(__symbol_get);
 static int verify_export_symbols(struct module *mod)
 {
 	unsigned int i;
-	struct module *owner;
+	struct module *owner = NULL;
 	const struct kernel_symbol *s;
 	struct {
 		const struct kernel_symbol *sym;
