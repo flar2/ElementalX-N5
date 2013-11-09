@@ -132,4 +132,8 @@ source "drivers/staging/ramster/Kconfig"
 
 source "drivers/staging/ozwpan/Kconfig"
 
+source "drivers/staging/media/Kconfig"
+
+source "drivers/staging/cpupower/Kconfig" 
+
 endif # STAGING
