@@ -45,6 +45,113 @@
 #define PRI_SRC_SEL_HFPLL	1
 #define PRI_SRC_SEL_HFPLL_DIV2	2
 
+
+/** elementalx defs  **/
+static int uv_bin = 2;
+static uint32_t arg_max_oc0 = 2265600;
+static uint32_t arg_max_oc1 = 2265600;
+static uint32_t arg_max_oc2 = 2265600;
+static uint32_t arg_max_oc3 = 2265600;
+
+int pvs_number = 0;
+module_param(pvs_number, int, 0755);
+
+/* boot arg max_oc */
+static int __init cpufreq_read_arg_max_oc0(char *max_oc0)
+{
+	unsigned long ui_khz;
+	int err;
+	err = strict_strtoul(max_oc0, 0, &ui_khz);
+	if (err) {
+		arg_max_oc0 = 2265600;
+		printk(KERN_INFO "[elementalx]: max_oc0='%i'\n", arg_max_oc0);
+		return 1;
+	}
+	
+	arg_max_oc0 = ui_khz;
+	
+	return 0;
+}
+__setup("max_oc0=", cpufreq_read_arg_max_oc0);
+
+static int __init cpufreq_read_arg_max_oc1(char *max_oc1)
+{
+	unsigned long ui_khz;
+	int err;
+	err = strict_strtoul(max_oc1, 0, &ui_khz);
+	if (err) {
+		arg_max_oc1 = 2265600;
+		printk(KERN_INFO "[elementalx]: max_oc1='%i'\n", arg_max_oc1);
+		return 1;
+	}
+	
+	arg_max_oc1 = ui_khz;
+	
+	return 0;
+}
+__setup("max_oc1=", cpufreq_read_arg_max_oc1);
+
+static int __init cpufreq_read_arg_max_oc2(char *max_oc2)
+{
+	unsigned long ui_khz;
+	int err;
+	err = strict_strtoul(max_oc2, 0, &ui_khz);
+	if (err) {
+		arg_max_oc2 = 2265600;
+		printk(KERN_INFO "[elementalx]: max_oc2='%i'\n", arg_max_oc2);
+		return 1;
+	}
+	
+	arg_max_oc2 = ui_khz;
+	
+	return 0;
+}
+__setup("max_oc2=", cpufreq_read_arg_max_oc2);
+
+static int __init cpufreq_read_arg_max_oc3(char *max_oc3)
+{
+	unsigned long ui_khz;
+	int err;
+	err = strict_strtoul(max_oc3, 0, &ui_khz);
+	if (err) {
+		arg_max_oc3 = 2265600;
+		printk(KERN_INFO "[elementalx]: max_oc3='%i'\n", arg_max_oc3);
+		return 1;
+	}
+	
+	arg_max_oc3 = ui_khz;
+	
+	return 0;
+}
+__setup("max_oc3=", cpufreq_read_arg_max_oc3);
+
+static int __init get_uv_level(char *vdd_uv)
+{
+	if (strcmp(vdd_uv, "0") == 0) {
+		uv_bin = 0;
+	} else if (strcmp(vdd_uv, "1") == 0) {
+		uv_bin = 1;
+	} else if (strcmp(vdd_uv, "2") == 0) {
+		uv_bin = 2;
+	} else if (strcmp(vdd_uv, "3") == 0) {
+		uv_bin = 3;
+	} else if (strcmp(vdd_uv, "4") == 0) {
+		uv_bin = 4;
+	} else if (strcmp(vdd_uv, "5") == 0) {
+		uv_bin = 5;
+	} else if (strcmp(vdd_uv, "6") == 0) {
+		uv_bin = 6;
+	} else {
+		uv_bin = 0;
+	}
+	return 0;
+}
+
+__setup("vdd_uv=", get_uv_level); 
+
+/** end elementalx defs  **/
+
+
 static DEFINE_MUTEX(driver_lock);
 static DEFINE_SPINLOCK(l2_lock);
 
@@ -992,13 +1099,14 @@ static void __init cpufreq_table_init(void)
 {
 	int cpu;
 	int freq_cnt = 0;
+	uint32_t limit_max_oc[4] = {arg_max_oc0, arg_max_oc1, arg_max_oc2, arg_max_oc3};
 
 	for_each_possible_cpu(cpu) {
 		int i;
 		/* Construct the freq_table tables from acpu_freq_tbl. */
 		for (i = 0, freq_cnt = 0; drv.acpu_freq_tbl[i].speed.khz != 0
 				&& freq_cnt < ARRAY_SIZE(*freq_table); i++) {
-			if (drv.acpu_freq_tbl[i].use_for_scaling) {
+			if (drv.acpu_freq_tbl[i].speed.khz <= limit_max_oc[cpu]) {
 				freq_table[cpu][freq_cnt].index = freq_cnt;
 				freq_table[cpu][freq_cnt].frequency
 					= drv.acpu_freq_tbl[i].speed.khz;
@@ -1109,6 +1217,39 @@ static void __init krait_apply_vmin(struct acpu_level *tbl)
 	}
 }
 
+static void apply_undervolting(void)
+{
+	if (uv_bin == 6) {
+		drv.acpu_freq_tbl[0].vdd_core = 625000;
+	        printk(KERN_INFO "[elementalx]: min_voltage='%i'\n", drv.acpu_freq_tbl[0].vdd_core );
+	}
+
+	if (uv_bin == 5) {
+		drv.acpu_freq_tbl[0].vdd_core = 650000;
+	        printk(KERN_INFO "[elementalx]: min_voltage='%i'\n", drv.acpu_freq_tbl[0].vdd_core );
+	}
+
+	if (uv_bin == 4) {
+		drv.acpu_freq_tbl[0].vdd_core = 675000;
+	        printk(KERN_INFO "[elementalx]: min_voltage='%i'\n", drv.acpu_freq_tbl[0].vdd_core );
+	}
+
+	if (uv_bin == 3) {
+		drv.acpu_freq_tbl[0].vdd_core = 700000;
+	        printk(KERN_INFO "[elementalx]: min_voltage='%i'\n", drv.acpu_freq_tbl[0].vdd_core );
+	}
+
+	if (uv_bin == 2) {
+		drv.acpu_freq_tbl[0].vdd_core = 725000;
+	        printk(KERN_INFO "[elementalx]: min_voltage='%i'\n", drv.acpu_freq_tbl[0].vdd_core );
+	}
+
+	if (uv_bin == 1) {
+		drv.acpu_freq_tbl[0].vdd_core = 750000;
+		printk(KERN_INFO "[elementalx]: min_voltage='%i'\n", drv.acpu_freq_tbl[0].vdd_core );
+	}
+}
+
 void __init get_krait_bin_format_a(void __iomem *base, struct bin_info *bin)
 {
 	u32 pte_efuse = readl_relaxed(base);
@@ -1142,6 +1283,8 @@ void __init get_krait_bin_format_b(void __iomem *base, struct bin_info *bin)
 		break;
 	}
 	bin->speed_valid = true;
+
+	pvs_number = bin->pvs;
 
 	/* Check PVS_BLOW_STATUS */
 	pte_efuse = readl_relaxed(base + 0x4);
@@ -1228,6 +1371,9 @@ static void __init hw_init(void)
 
 	if (krait_needs_vmin())
 		krait_apply_vmin(drv.acpu_freq_tbl);
+
+	if (uv_bin)
+		apply_undervolting(); 
 
 	l2->hfpll_base = ioremap(l2->hfpll_phys_base, SZ_32);
 	BUG_ON(!l2->hfpll_base);
