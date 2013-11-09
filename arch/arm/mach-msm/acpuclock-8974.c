@@ -28,6 +28,8 @@
 #define LVL_NOM		RPM_REGULATOR_CORNER_NORMAL
 #define LVL_HIGH	RPM_REGULATOR_CORNER_SUPER_TURBO
 
+static int opt_bin = 0;
+
 static struct hfpll_data hfpll_data __initdata = {
 	.mode_offset = 0x00,
 	.l_offset = 0x04,
@@ -257,6 +259,7 @@ static struct msm_bus_paths bw_level_tbl_v2[] __initdata = {
 	[6] = BW_MBPS(4912), /* At least 614 MHz on bus. */
 	[7] = BW_MBPS(6400), /* At least 800 MHz on bus. */
 	[8] = BW_MBPS(7448), /* At least 931 MHz on bus. */
+	[9] = BW_MBPS(8000), /* At least 1000 MHz on bus. */
 };
 
 static struct l2_level l2_freq_tbl_v2[] __initdata = {
@@ -280,6 +283,30 @@ static struct l2_level l2_freq_tbl_v2[] __initdata = {
 	[17] = { { 1574400, HFPLL, 1,  82 }, LVL_HIGH, 1050000, 7 },
 	[18] = { { 1651200, HFPLL, 1,  86 }, LVL_HIGH, 1050000, 7 },
 	[19] = { { 1728000, HFPLL, 1,  90 }, LVL_HIGH, 1050000, 8 },
+	{ }
+};
+
+static struct l2_level l2_freq_tbl_v2_elementalx[] __initdata = {
+	[0]  = { {  300000, PLL_0, 0,   0 }, LVL_LOW,   950000, 0 },
+	[1]  = { {  345600, HFPLL, 2,  36 }, LVL_LOW,   950000, 1 },
+	[2]  = { {  422400, HFPLL, 2,  44 }, LVL_LOW,   950000, 2 },
+	[3]  = { {  499200, HFPLL, 2,  52 }, LVL_LOW,   950000, 3 },
+	[4]  = { {  576000, HFPLL, 1,  30 }, LVL_LOW,   950000, 4 },
+	[5]  = { {  652800, HFPLL, 1,  34 }, LVL_NOM,   950000, 4 },
+	[6]  = { {  729600, HFPLL, 1,  38 }, LVL_NOM,   950000, 4 },
+	[7]  = { {  806400, HFPLL, 1,  42 }, LVL_NOM,   950000, 4 },
+	[8]  = { {  883200, HFPLL, 1,  46 }, LVL_NOM,   950000, 5 },
+	[9]  = { {  960000, HFPLL, 1,  50 }, LVL_NOM,   950000, 5 },
+	[10] = { { 1036800, HFPLL, 1,  54 }, LVL_NOM,   950000, 5 },
+	[11] = { { 1113600, HFPLL, 1,  58 }, LVL_HIGH, 1050000, 6 },
+	[12] = { { 1190400, HFPLL, 1,  62 }, LVL_HIGH, 1050000, 6 },
+	[13] = { { 1267200, HFPLL, 1,  66 }, LVL_HIGH, 1050000, 6 },
+	[14] = { { 1344000, HFPLL, 1,  70 }, LVL_HIGH, 1050000, 6 },
+	[15] = { { 1420800, HFPLL, 1,  74 }, LVL_HIGH, 1050000, 6 },
+	[16] = { { 1497600, HFPLL, 1,  78 }, LVL_HIGH, 1050000, 6 },
+	[17] = { { 1574400, HFPLL, 1,  82 }, LVL_HIGH, 1050000, 7 },
+	[18] = { { 1651200, HFPLL, 1,  86 }, LVL_HIGH, 1050000, 7 },
+	[19] = { { 1804800, HFPLL, 1,  94 }, LVL_HIGH, 1050000, 9 },
 	{ }
 };
 
@@ -1003,6 +1030,20 @@ static struct acpuclk_krait_params acpuclk_8974_params __initdata = {
 	.stby_khz = 300000,
 };
 
+static int __init get_opt_level(char *l2_opt)
+{
+	if (strcmp(l2_opt, "0") == 0) {
+		opt_bin = 0;
+	} else if (strcmp(l2_opt, "1") == 0) {
+		opt_bin = 1;
+	} else {
+		opt_bin = 0;
+	}
+	return 0;
+}
+
+__setup("l2_opt=", get_opt_level); 
+
 static void __init apply_v1_l2_workaround(void)
 {
 	static struct l2_level resticted_l2_tbl[] __initdata = {
@@ -1040,6 +1081,11 @@ static int __init acpuclk_8974_probe(struct platform_device *pdev)
 		 */
 		if (SOCINFO_VERSION_MINOR(socinfo_get_version()) < 2)
 			apply_v1_l2_workaround();
+	}
+
+	if (opt_bin == 1) {
+		acpuclk_8974_params.l2_freq_tbl = l2_freq_tbl_v2_elementalx;
+		acpuclk_8974_params.l2_freq_tbl_size = sizeof(l2_freq_tbl_v2_elementalx);
 	}
 
 	return acpuclk_krait_init(&pdev->dev, &acpuclk_8974_params);
