@@ -24,6 +24,10 @@
 #include <linux/log2.h>
 #include <linux/qpnp/power-on.h>
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_QPNP_PON
+#include <linux/input/sweep2wake.h>
+#endif
+
 /* Common PNP defines */
 #define QPNP_PON_REVISION2(base)		(base + 0x01)
 
@@ -833,6 +837,12 @@ static int __devinit qpnp_pon_config_init(struct qpnp_pon *pon)
 				"Can't register pon key: %d\n", rc);
 			goto free_input_dev;
 		}
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_QPNP_PON
+		else {
+			sweep2wake_setdev(pon->pon_input);
+			printk(KERN_INFO "[sweep2wake]: set device %s\n", pon->pon_input->name);
+		}
+#endif
 	}
 
 	for (i = 0; i < pon->num_pon_config; i++) {
