@@ -100,6 +100,14 @@ void sweep2wake_pwrtrigger(void) {
         return;
 }
 
+/* reset on finger release */
+void sweep2wake_reset(void) {
+	exec_count = true;
+	barrier[0] = false;
+	barrier[1] = false;
+	scr_on_touch = false;
+}
+
 /* Sweep2wake main function */
 void detect_sweep2wake(int x, int y, bool st)
 {
