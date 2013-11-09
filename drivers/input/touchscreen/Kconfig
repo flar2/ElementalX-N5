@@ -1035,4 +1035,23 @@ config TOUCHSCREEN_CHARGER_NOTIFY
 config TOUCHSCREEN_SWEEP2WAKE
         tristate "Sweep2Wake for touchscreens"
         default n
+
+choice
+	prompt "Sweep2wake power key device?"
+	depends on TOUCHSCREEN_SWEEP2WAKE
+	default TOUCHSCREEN_SWEEP2WAKE_QPNP_PON if MACH_MSM8974_HAMMERHEAD
+	default n
+	help
+	  This option sets which pwrkey driver sweep2wake should use to emulate
+	  the power key presses. Selecting the wrong one will lead to null
+	  pointer exceptions!
+
+config TOUCHSCREEN_SWEEP2WAKE_QPNP_PON
+        bool "Use qpnp-power-on to emulate power button presses."
+	help
+	  This uses the qpnp driver to register the sweep2wake power key device
+	  used to emulate the power key presses on touch events.
+
+endchoice
+
 endif
