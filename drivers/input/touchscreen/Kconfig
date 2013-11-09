@@ -1031,4 +1031,8 @@ config TOUCHSCREEN_CHARGER_NOTIFY
 	  The touch firmware will use this information to decide whether
 	  a new algorithm to reduce the noise impact needs to be applied
 	  or not.
+
+config TOUCHSCREEN_SWEEP2WAKE
+        tristate "Sweep2Wake for touchscreens"
+        default n
 endif
