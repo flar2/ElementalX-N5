@@ -303,6 +303,11 @@ static void touch_abs_input_report(struct synaptics_ts_data *ts, const ktime_t t
 		}
 		else {
 			ts->ts_data.curr_data[id].state = 0;
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+                        if (s2w_switch > 0) {
+				sweep2wake_reset();
+                        }
+#endif
 		}
 	}
 
