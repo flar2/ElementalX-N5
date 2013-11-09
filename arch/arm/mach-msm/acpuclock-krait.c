@@ -47,7 +47,7 @@
 
 
 /** elementalx defs  **/
-static int uv_bin = 2;
+static int uv_bin = 0;
 static uint32_t arg_max_oc0 = 2265600;
 static uint32_t arg_max_oc1 = 2265600;
 static uint32_t arg_max_oc2 = 2265600;
