@@ -1,7 +1,7 @@
 #
 # Makefile for Linux kernel SUN RPC
 #
-
+ccflags-y  := -Wno-maybe-uninitialized
 
 obj-$(CONFIG_SUNRPC) += sunrpc.o
 obj-$(CONFIG_SUNRPC_GSS) += auth_gss/
