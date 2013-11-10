@@ -1784,6 +1784,61 @@ static int lcd_notifier_callback(struct notifier_block *this,
 	return 0;
 }
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+static ssize_t touch_synaptics_sweep2wake_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	size_t count = 0;
+
+	count += sprintf(buf, "%d\n", s2w_switch);
+
+	return count;
+}
+
+static ssize_t touch_synaptics_sweep2wake_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (buf[0] >= '0' && buf[0] <= '2' && buf[1] == '\n')
+                if (s2w_switch != buf[0] - '0')
+		        s2w_switch = buf[0] - '0';
+
+	return count;
+}
+
+static DEVICE_ATTR(sweep2wake, (S_IWUSR|S_IRUGO),
+	touch_synaptics_sweep2wake_show, touch_synaptics_sweep2wake_dump);
+#endif
+
+static struct kobject *android_touch_kobj;
+
+static int touch_synaptics_sysfs_init(void)
+{
+	int ret ;
+
+	android_touch_kobj = kobject_create_and_add("android_touch", NULL) ;
+	if (android_touch_kobj == NULL) {
+		pr_debug("[touch_synaptics]%s: subsystem_register failed\n", __func__);
+		ret = -ENOMEM;
+		return ret;
+	}
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	ret = sysfs_create_file(android_touch_kobj, &dev_attr_sweep2wake.attr);
+	if (ret) {
+		printk(KERN_ERR "[sweep2wake]%s: sysfs_create_file failed\n", __func__);
+		return ret;
+	}
+#endif
+	return 0 ;
+}
+
+static void touch_synaptics_sysfs_deinit(void)
+{
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	sysfs_remove_file(android_touch_kobj, &dev_attr_sweep2wake.attr);
+#endif
+	kobject_del(android_touch_kobj);
+}
+
 static int synaptics_ts_probe(
 	struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -1874,6 +1929,8 @@ static int synaptics_ts_probe(
 		ret = -ENOMEM;
 		goto err_input_dev_alloc_failed;
 	}
+
+	touch_synaptics_sysfs_init();
 
 	ts->input_dev->name = "touch_dev";
 
@@ -1980,6 +2037,7 @@ static int synaptics_ts_remove(struct i2c_client *client)
 	struct synaptics_ts_data *ts = i2c_get_clientdata(client);
 	int i;
 
+	touch_synaptics_sysfs_deinit();
 	for (i = 0; i < ARRAY_SIZE(synaptics_device_attrs); i++) {
 		device_remove_file(&client->dev,
 				&synaptics_device_attrs[i]);
