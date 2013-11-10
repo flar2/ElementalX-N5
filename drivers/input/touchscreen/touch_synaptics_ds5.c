@@ -462,6 +462,12 @@ static void touch_fw_upgrade_func(struct work_struct *work_fw_upgrade)
 	saved_state = ts->curr_pwr_state;
 	if (ts->curr_pwr_state == POWER_ON) {
 		disable_irq(ts->client->irq);
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+		if (irq_wake) {
+			irq_wake = false;
+			disable_irq_wake(ts->client->irq);
+		}
+#endif
 	}
 	else {
 		touch_power_cntl(ts, POWER_ON);
@@ -478,6 +484,12 @@ static void touch_fw_upgrade_func(struct work_struct *work_fw_upgrade)
 	if (saved_state == POWER_ON) {
 		touch_ic_init(ts);
 		enable_irq(ts->client->irq);
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+		if (!irq_wake) {
+			irq_wake = false;
+			enable_irq_wake(ts->client->irq);
+		}
+#endif
 	}
 	else {
 		touch_power_cntl(ts, POWER_OFF);
@@ -1966,7 +1978,7 @@ static int synaptics_ts_probe(
 	gpio_direction_input(ts->pdata->irq_gpio);
 
 	ret = request_threaded_irq(client->irq, NULL, touch_irq_handler,
-			IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND | IRQF_EARLY_RESUME, client->name, ts);
+			IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND, client->name, ts);
 
 	if (ret < 0) {
 		TOUCH_ERR_MSG("request_irq failed. use polling mode\n");
