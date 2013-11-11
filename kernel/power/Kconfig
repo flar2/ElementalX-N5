@@ -26,6 +26,12 @@ config WAKELOCK
 	bool
 	default y
 
+config HAS_EARLYSUSPEND2
+	bool "Deprecated early suspend functions"
+	default y
+	help
+	  This restores the deprecated early suspend functions.
+
 config HIBERNATE_CALLBACKS
 	bool
 

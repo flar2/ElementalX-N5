@@ -510,6 +510,11 @@ static ssize_t autosleep_store(struct kobject *kobj,
 	suspend_state_t state = decode_state(buf, n);
 	int error;
 
+#ifdef CONFIG_HAS_EARLYSUSPEND2
+	if (state == PM_SUSPEND_ON || valid_state(state)) {
+		request_suspend_state(state);
+	}	
+#endif
 	if (state == PM_SUSPEND_ON
 	    && strcmp(buf, "off") && strcmp(buf, "off\n"))
 		return -EINVAL;
