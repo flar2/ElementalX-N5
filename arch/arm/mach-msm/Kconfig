@@ -3029,6 +3029,12 @@ config FORCE_FAST_CHARGE
 	  A simple sysfs interface to increase input current limit to
 	  900mA when charging via USB.
 
+config MSM_SLEEPER
+	bool "Limit max frequency and shut off cores while screen is off"
+	default y
+	help
+	  Limit max frequency and shut off cores while screen is off 
+
 config MSM_UARTDM_Core_v14
 	bool "Use MSM BLSP based HSUART Core v1.4"
 	depends on SERIAL_MSM_HS
