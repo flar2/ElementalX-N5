@@ -13,66 +13,67 @@
  *
  */
 
-#include <linux/earlysuspend2.h>
 #include <linux/workqueue.h>
 #include <linux/cpu.h>
 #include <linux/module.h>
 #include <linux/cpufreq.h>
 #include <mach/cpufreq.h>
+#include <linux/lcd_notify.h>
 
-#define MSM_SLEEPER_MAJOR_VERSION	2
+#define MSM_SLEEPER_MAJOR_VERSION	3
 #define MSM_SLEEPER_MINOR_VERSION	0
 
 extern uint32_t maxscroff;
 extern uint32_t maxscroff_freq;
 
 
-#ifdef CONFIG_HAS_EARLYSUSPEND2
-static void __cpuinit msm_sleeper_early_suspend(struct early_suspend2 *h)
+struct notifier_block notif;
+
+static void msm_sleeper_suspend(void)
 {
 	int cpu;
-	int i;
-	int num_cores = 4;
 
 	for_each_possible_cpu(cpu) {
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, maxscroff_freq);
 		pr_info("Limit max frequency to: %d\n", maxscroff_freq);
 	}
 
-	for (i = 1; i < num_cores; i++) {
-		if (cpu_online(i))
-			cpu_down(i);
-	}
-
-
 	return; 
 }
 
-static void __cpuinit msm_sleeper_late_resume(struct early_suspend2 *h)
+static void msm_sleeper_resume(void)
 {
 	int cpu;
-	int i;
-	int num_cores = 4;
 
 	for_each_possible_cpu(cpu) {
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, MSM_CPUFREQ_NO_LIMIT);
 		pr_info("Restore max frequency to %d\n", MSM_CPUFREQ_NO_LIMIT);
 	}
 
-	for (i = 1; i < num_cores; i++) {
-		if (!cpu_online(i))
-			cpu_up(i);
-	}
-
 	return; 
 }
 
-static struct early_suspend2 msm_sleeper_early_suspend_driver = {
-	.level = EARLY_SUSPEND2_LEVEL_BLANK_SCREEN + 10,
-	.suspend = msm_sleeper_early_suspend,
-	.resume = msm_sleeper_late_resume,
-};
-#endif
+static int lcd_notifier_callback(struct notifier_block *this,
+				unsigned long event, void *data)
+{
+	switch (event) {
+	case LCD_EVENT_ON_START:
+		msm_sleeper_resume();
+		break;
+	case LCD_EVENT_ON_END:
+		break;
+	case LCD_EVENT_OFF_START:
+		msm_sleeper_suspend();
+		break;
+	case LCD_EVENT_OFF_END:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 
 static int __init msm_sleeper_init(void)
 {
@@ -80,14 +81,16 @@ static int __init msm_sleeper_init(void)
 		 MSM_SLEEPER_MAJOR_VERSION,
 		 MSM_SLEEPER_MINOR_VERSION);
 
-#ifdef CONFIG_HAS_EARLYSUSPEND2
-		register_early_suspend2(&msm_sleeper_early_suspend_driver);
-#endif
+	notif.notifier_call = lcd_notifier_callback;
+
+	if (lcd_register_client(&notif))
+		printk("[msm-sleeper] error\n");
+
 	return 0;
 }
 
 MODULE_AUTHOR("flar2 <asegaert@gmail.com>");
-MODULE_DESCRIPTION("'msm-sleeper' - Limit max frequency and shut down cores while screen is off");
+MODULE_DESCRIPTION("'msm-sleeper' - Limit max frequency while screen is off");
 MODULE_LICENSE("GPL v2");
 
 late_initcall(msm_sleeper_init);
