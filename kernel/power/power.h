@@ -291,8 +291,3 @@ extern int pm_wake_lock(const char *buf);
 extern int pm_wake_unlock(const char *buf);
 
 #endif /* !CONFIG_PM_WAKELOCKS */
-
-#ifdef CONFIG_HAS_EARLYSUSPEND2
-/* kernel/power/earlysuspend2.c */
-void request_suspend_state(suspend_state_t state);
-#endif
