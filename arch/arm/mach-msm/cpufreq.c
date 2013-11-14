@@ -46,7 +46,7 @@ static struct workqueue_struct *msm_cpufreq_wq;
 
 /* maxscroff */
 uint32_t maxscroff_freq = 729600;
-uint32_t maxscroff = 1; 
+uint32_t maxscroff = 0; 
 
 struct cpufreq_suspend_t {
 	struct mutex suspend_mutex;
@@ -64,23 +64,6 @@ struct cpu_freq {
 };
 
 static DEFINE_PER_CPU(struct cpu_freq, cpu_freq_info);
-
-
-/**maxscroff**/
-static int __init cpufreq_read_arg_maxscroff(char *max_so)
-{
-	if (strcmp(max_so, "0") == 0) {
-		maxscroff = 0;
-	} else if (strcmp(max_so, "1") == 0) {
-		maxscroff = 1;
-	} else {
-		maxscroff = 0;
-	}
-	return 1;
-}
-
-__setup("max_so=", cpufreq_read_arg_maxscroff);
-/**end maxscroff**/ 
 
 static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq)
 {
@@ -429,12 +412,35 @@ struct freq_attr msm_cpufreq_attr_max_screen_off_khz = {
 	.store = store_max_screen_off_khz,
 };
 
+static ssize_t show_max_screen_off(struct cpufreq_policy *policy, char *buf)
+{
+	return sprintf(buf, "%u\n", maxscroff);
+}
+
+static ssize_t store_max_screen_off(struct cpufreq_policy *policy,
+		const char *buf, size_t count)
+{
+	if (buf[0] >= '0' && buf[0] <= '1' && buf[1] == '\n')
+            if (maxscroff != buf[0] - '0') 
+		        maxscroff = buf[0] - '0';
+
+	return count;
+}
+
+struct freq_attr msm_cpufreq_attr_max_screen_off = {
+	.attr = { .name = "screen_off_max",
+		.mode = 0644,
+	},
+	.show = show_max_screen_off,
+	.store = store_max_screen_off,
+};
 
 /** end maxscreen off sysfs interface **/
 
 static struct freq_attr *msm_freq_attr[] = {
 	&cpufreq_freq_attr_scaling_available_freqs,
-	&msm_cpufreq_attr_max_screen_off_khz, 
+	&msm_cpufreq_attr_max_screen_off_khz,
+ 	&msm_cpufreq_attr_max_screen_off,
 	NULL,
 };
 
