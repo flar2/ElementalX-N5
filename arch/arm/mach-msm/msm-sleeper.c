@@ -25,7 +25,7 @@
 
 extern uint32_t maxscroff;
 extern uint32_t maxscroff_freq;
-
+static int limit_set = 0;
 
 struct notifier_block notif;
 
@@ -37,6 +37,7 @@ static void msm_sleeper_suspend(void)
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, maxscroff_freq);
 		pr_info("Limit max frequency to: %d\n", maxscroff_freq);
 	}
+	limit_set = 1;
 
 	return; 
 }
@@ -49,6 +50,7 @@ static void msm_sleeper_resume(void)
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, MSM_CPUFREQ_NO_LIMIT);
 		pr_info("Restore max frequency to %d\n", MSM_CPUFREQ_NO_LIMIT);
 	}
+	limit_set = 0;
 
 	return; 
 }
@@ -58,12 +60,14 @@ static int lcd_notifier_callback(struct notifier_block *this,
 {
 	switch (event) {
 	case LCD_EVENT_ON_START:
-		msm_sleeper_resume();
+		if (limit_set)
+			msm_sleeper_resume();
 		break;
 	case LCD_EVENT_ON_END:
 		break;
 	case LCD_EVENT_OFF_START:
-		msm_sleeper_suspend();
+		if (maxscroff)
+			msm_sleeper_suspend();
 		break;
 	case LCD_EVENT_OFF_END:
 		break;
