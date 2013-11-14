@@ -57,6 +57,11 @@ build_path_from_dentry(struct dentry *direntry)
 	struct cifs_tcon *tcon = cifs_sb_master_tcon(cifs_sb);
 	unsigned seq;
 
+	if (direntry == NULL)
+		return NULL;  /* not much we can do if dentry is freed and
+		we need to reopen the file after it was closed implicitly
+		when the server crashed */
+
 	dirsep = CIFS_DIR_SEP(cifs_sb);
 	if (tcon->Flags & SMB_SHARE_IS_IN_DFS)
 		dfsplen = strnlen(tcon->treeName, MAX_TREE_SIZE + 1);
@@ -171,10 +176,10 @@ cifs_create(struct inode *inode, struct dentry *direntry, umode_t mode,
 	}
 	tcon = tlink_tcon(tlink);
 
-	if (tcon->ses->server->oplocks)
+	if (oplockEnabled)
 		oplock = REQ_OPLOCK;
 
-	if (nd)
+	if (nd && (nd->flags & LOOKUP_OPEN))
 		oflags = nd->intent.open.file->f_flags;
 	else
 		oflags = O_RDONLY | O_CREAT;
@@ -209,7 +214,7 @@ cifs_create(struct inode *inode, struct dentry *direntry, umode_t mode,
 		   which should be rare for path not covered on files) */
 	}
 
-	if (nd) {
+	if (nd && (nd->flags & LOOKUP_OPEN)) {
 		/* if the file is going to stay open, then we
 		   need to set the desired access properly */
 		desiredAccess = 0;
@@ -243,9 +248,6 @@ cifs_create(struct inode *inode, struct dentry *direntry, umode_t mode,
 	 */
 	if (!tcon->unix_ext && (mode & S_IWUGO) == 0)
 		create_options |= CREATE_OPTION_READONLY;
-
-	if (backup_cred(cifs_sb))
-		create_options |= CREATE_OPEN_BACKUP_INTENT;
 
 	if (tcon->ses->capabilities & CAP_NT_SMBS)
 		rc = CIFSSMBOpen(xid, tcon, full_path, disposition,
@@ -326,7 +328,7 @@ cifs_create_set_dentry:
 	else
 		cFYI(1, "Create worked, get_inode_info failed rc = %d", rc);
 
-	if (newinode && nd) {
+	if (newinode && nd && (nd->flags & LOOKUP_OPEN)) {
 		struct cifsFileInfo *pfile_info;
 		struct file *filp;
 
@@ -360,7 +362,6 @@ int cifs_mknod(struct inode *inode, struct dentry *direntry, umode_t mode,
 {
 	int rc = -EPERM;
 	int xid;
-	int create_options = CREATE_NOT_DIR | CREATE_OPTION_SPECIAL;
 	struct cifs_sb_info *cifs_sb;
 	struct tcon_link *tlink;
 	struct cifs_tcon *pTcon;
@@ -435,11 +436,9 @@ int cifs_mknod(struct inode *inode, struct dentry *direntry, umode_t mode,
 		return rc;
 	}
 
-	if (backup_cred(cifs_sb))
-		create_options |= CREATE_OPEN_BACKUP_INTENT;
-
+	/* FIXME: would WRITE_OWNER | WRITE_DAC be better? */
 	rc = CIFSSMBOpen(xid, pTcon, full_path, FILE_CREATE,
-			 GENERIC_WRITE, create_options,
+			 GENERIC_WRITE, CREATE_NOT_DIR | CREATE_OPTION_SPECIAL,
 			 &fileHandle, &oplock, buf, cifs_sb->local_nls,
 			 cifs_sb->mnt_cifs_flags & CIFS_MOUNT_MAP_SPECIAL_CHR);
 	if (rc)
@@ -492,7 +491,7 @@ cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 {
 	int xid;
 	int rc = 0; /* to get around spurious gcc warning, set to zero here */
-	__u32 oplock;
+	__u32 oplock = 0;
 	__u16 fileHandle = 0;
 	bool posix_open = false;
 	struct cifs_sb_info *cifs_sb;
@@ -517,8 +516,6 @@ cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 		return (struct dentry *)tlink;
 	}
 	pTcon = tlink_tcon(tlink);
-
-	oplock = pTcon->ses->server->oplocks ? REQ_OPLOCK : 0;
 
 	/*
 	 * Don't allow the separator character in a path component.
@@ -571,7 +568,7 @@ cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 	 * reduction in network traffic in the other paths.
 	 */
 	if (pTcon->unix_ext) {
-		if (nd && !(nd->flags & LOOKUP_DIRECTORY) &&
+		if (nd && !(nd->flags & (LOOKUP_PARENT | LOOKUP_DIRECTORY)) &&
 		     (nd->flags & LOOKUP_OPEN) && !pTcon->broken_posix_open &&
 		     (nd->intent.open.file->f_flags & O_CREAT)) {
 			rc = cifs_posix_open(full_path, &newInode,
@@ -666,23 +663,8 @@ cifs_d_revalidate(struct dentry *direntry, struct nameidata *nd)
 	if (direntry->d_inode) {
 		if (cifs_revalidate_dentry(direntry))
 			return 0;
-		else {
-			/*
-			 * If the inode wasn't known to be a dfs entry when
-			 * the dentry was instantiated, such as when created
-			 * via ->readdir(), it needs to be set now since the
-			 * attributes will have been updated by
-			 * cifs_revalidate_dentry().
-			 */
-			if (IS_AUTOMOUNT(direntry->d_inode) &&
-			   !(direntry->d_flags & DCACHE_NEED_AUTOMOUNT)) {
-				spin_lock(&direntry->d_lock);
-				direntry->d_flags |= DCACHE_NEED_AUTOMOUNT;
-				spin_unlock(&direntry->d_lock);
-			}
-
+		else
 			return 1;
-		}
 	}
 
 	/*

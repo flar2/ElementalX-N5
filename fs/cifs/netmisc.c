@@ -197,7 +197,8 @@ cifs_convert_address(struct sockaddr *dst, const char *src, int len)
 		memcpy(scope_id, pct + 1, slen);
 		scope_id[slen] = '\0';
 
-		rc = kstrtouint(scope_id, 0, &s6->sin6_scope_id);
+		rc = strict_strtoul(scope_id, 0,
+					(unsigned long *)&s6->sin6_scope_id);
 		rc = (rc == 0) ? 1 : 0;
 	}
 
@@ -835,9 +836,8 @@ ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode)
 }
 
 int
-map_smb_to_linux_error(char *buf, bool logErr)
+map_smb_to_linux_error(struct smb_hdr *smb, bool logErr)
 {
-	struct smb_hdr *smb = (struct smb_hdr *)buf;
 	unsigned int i;
 	int rc = -EIO;	/* if transport error smb error may not be set */
 	__u8 smberrclass;
