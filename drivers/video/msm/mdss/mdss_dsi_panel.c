@@ -42,6 +42,9 @@ DEFINE_LED_TRIGGER(bl_led_trigger);
 #if defined(CONFIG_BACKLIGHT_LM3630)
 extern void lm3630_lcd_backlight_set_level(int level);
 #endif
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+#include <linux/input/sweep2wake.h>
+#endif
 
 static struct mdss_dsi_phy_ctrl phy_params;
 static struct mdss_panel_common_pdata *local_pdata;
@@ -329,6 +332,15 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
 	if (!gpio_get_value(ctrl->disp_en_gpio))
 		return 0;
+
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	if (s2w_switch) {
+		ctrl->off_cmds.cmds[1].payload[0] = 0x11;
+	} else {
+		ctrl->off_cmds.cmds[1].payload[0] = 0x10;
+	}
+	pr_info("[sweep2wake] payload = %x \n", ctrl->off_cmds.cmds[1].payload[0]);
+#endif
 
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
