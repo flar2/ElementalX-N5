@@ -29,16 +29,6 @@
 
 extern int s2w_switch;
 extern bool irq_wake;
-extern bool scr_suspended;
-extern bool scr_on_touch;
-extern bool exec_count;
-extern bool barrier[2];
-
-/* Sweep2wake reset function */
-extern void sweep2wake_reset(void);
-
-/* Sweep2wake main function */
-extern void detect_sweep2wake(int, int, bool);
 
 /* PowerKey setter */
 extern void sweep2wake_setdev(struct input_dev *);
