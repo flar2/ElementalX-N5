@@ -22,13 +22,47 @@
 #include <linux/mfd/wcd9xxx/wcd9320_registers.h>
 
 #define SOUND_CONTROL_MAJOR_VERSION	3
-#define SOUND_CONTROL_MINOR_VERSION	0
+#define SOUND_CONTROL_MINOR_VERSION	1
 
 extern struct snd_soc_codec *fauxsound_codec_ptr;
+
+static int snd_ctrl_locked = 0;
 
 unsigned int taiko_read(struct snd_soc_codec *codec, unsigned int reg);
 int taiko_write(struct snd_soc_codec *codec, unsigned int reg,
 		unsigned int value);
+
+int reg_access(unsigned int reg)
+{
+	int ret = 1;
+
+	switch (reg) {
+		case TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX3_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX4_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX5_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX6_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_TX1_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX2_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX3_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX4_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX5_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX6_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX7_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX8_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX9_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX10_VOL_CTL_GAIN:
+			if (snd_ctrl_locked)
+				ret = 0;
+			break;
+		default:
+			break;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(reg_access);
 
 static bool calc_checksum(unsigned int a, unsigned int b, unsigned int c)
 {
@@ -46,7 +80,7 @@ static bool calc_checksum(unsigned int a, unsigned int b, unsigned int c)
 static ssize_t cam_mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-        return sprintf(buf, "%u",
+        return sprintf(buf, "%u\n",
 		taiko_read(fauxsound_codec_ptr,
 			TAIKO_A_CDC_TX6_VOL_CTL_GAIN));
 
@@ -69,7 +103,7 @@ static ssize_t cam_mic_gain_store(struct kobject *kobj,
 static ssize_t mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u",
+	return sprintf(buf, "%u\n",
 		taiko_read(fauxsound_codec_ptr,
 			TAIKO_A_CDC_TX7_VOL_CTL_GAIN));
 }
@@ -92,7 +126,7 @@ static ssize_t mic_gain_store(struct kobject *kobj,
 static ssize_t speaker_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-        return sprintf(buf, "%u %u",
+        return sprintf(buf, "%u %u\n",
 			taiko_read(fauxsound_codec_ptr,
 				TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL),
 			taiko_read(fauxsound_codec_ptr,
@@ -119,7 +153,7 @@ static ssize_t speaker_gain_store(struct kobject *kobj,
 static ssize_t headphone_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u %u",
+	return sprintf(buf, "%u %u\n",
 			taiko_read(fauxsound_codec_ptr,
 				TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL),
 			taiko_read(fauxsound_codec_ptr,
@@ -145,7 +179,7 @@ static ssize_t headphone_gain_store(struct kobject *kobj,
 static ssize_t headphone_pa_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u %u",
+	return sprintf(buf, "%u %u\n",
 		taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_L_GAIN),
 		taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_R_GAIN));
 }
@@ -186,6 +220,26 @@ static ssize_t sound_control_version_show(struct kobject *kobj, struct kobj_attr
 			SOUND_CONTROL_MINOR_VERSION);
 }
 
+static ssize_t sound_control_locked_store(struct kobject *kobj,
+                struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int inp;
+
+	sscanf(buf, "%d", &inp);
+
+	if (inp == 0)
+		snd_ctrl_locked = 0;
+	else
+		snd_ctrl_locked = 1;
+
+	return count;
+}
+
+static ssize_t sound_control_locked_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+        return sprintf(buf, "%d\n", snd_ctrl_locked);
+}
+
 static struct kobj_attribute cam_mic_gain_attribute =
 	__ATTR(gpl_cam_mic_gain,
 		0666,
@@ -216,6 +270,12 @@ static struct kobj_attribute headphone_pa_gain_attribute =
 		headphone_pa_gain_show,
 		headphone_pa_gain_store);
 
+static struct kobj_attribute sound_control_locked_attribute =
+	__ATTR(gpl_sound_control_locked,
+		0666,
+		sound_control_locked_show,
+		sound_control_locked_store);
+
 static struct kobj_attribute sound_control_version_attribute =
 	__ATTR(gpl_sound_control_version,
 		0444,
@@ -228,6 +288,7 @@ static struct attribute *sound_control_attrs[] =
 		&speaker_gain_attribute.attr,
 		&headphone_gain_attribute.attr,
 		&headphone_pa_gain_attribute.attr,
+		&sound_control_locked_attribute.attr,
 		&sound_control_version_attribute.attr,
 		NULL,
 	};
