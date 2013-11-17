@@ -124,9 +124,7 @@ static __u32 cifs_ssetup_hdr(struct cifs_ses *ses, SESSION_SETUP_ANDX *pSMB)
 	/*	that we use in next few lines                               */
 	/* Note that header is initialized to zero in header_assemble */
 	pSMB->req.AndXCommand = 0xFF;
-	pSMB->req.MaxBufferSize = cpu_to_le16(min_t(u32,
-					CIFSMaxBufSize + MAX_CIFS_HDR_SIZE - 4,
-					USHRT_MAX));
+	pSMB->req.MaxBufferSize = cpu_to_le16(ses->server->maxBuf);
 	pSMB->req.MaxMpxCount = cpu_to_le16(ses->server->maxReq);
 	pSMB->req.VcNumber = get_next_vcnum(ses);
 
@@ -167,16 +165,16 @@ unicode_oslm_strings(char **pbcc_area, const struct nls_table *nls_cp)
 	int bytes_ret = 0;
 
 	/* Copy OS version */
-	bytes_ret = cifs_strtoUTF16((__le16 *)bcc_ptr, "Linux version ", 32,
-				    nls_cp);
+	bytes_ret = cifs_strtoUCS((__le16 *)bcc_ptr, "Linux version ", 32,
+				  nls_cp);
 	bcc_ptr += 2 * bytes_ret;
-	bytes_ret = cifs_strtoUTF16((__le16 *) bcc_ptr, init_utsname()->release,
-				    32, nls_cp);
+	bytes_ret = cifs_strtoUCS((__le16 *) bcc_ptr, init_utsname()->release,
+				  32, nls_cp);
 	bcc_ptr += 2 * bytes_ret;
 	bcc_ptr += 2; /* trailing null */
 
-	bytes_ret = cifs_strtoUTF16((__le16 *) bcc_ptr, CIFS_NETWORK_OPSYS,
-				    32, nls_cp);
+	bytes_ret = cifs_strtoUCS((__le16 *) bcc_ptr, CIFS_NETWORK_OPSYS,
+				  32, nls_cp);
 	bcc_ptr += 2 * bytes_ret;
 	bcc_ptr += 2; /* trailing null */
 
@@ -197,8 +195,8 @@ static void unicode_domain_string(char **pbcc_area, struct cifs_ses *ses,
 		*(bcc_ptr+1) = 0;
 		bytes_ret = 0;
 	} else
-		bytes_ret = cifs_strtoUTF16((__le16 *) bcc_ptr, ses->domainName,
-					    256, nls_cp);
+		bytes_ret = cifs_strtoUCS((__le16 *) bcc_ptr, ses->domainName,
+					  256, nls_cp);
 	bcc_ptr += 2 * bytes_ret;
 	bcc_ptr += 2;  /* account for null terminator */
 
@@ -226,8 +224,8 @@ static void unicode_ssetup_strings(char **pbcc_area, struct cifs_ses *ses,
 		*bcc_ptr = 0;
 		*(bcc_ptr+1) = 0;
 	} else {
-		bytes_ret = cifs_strtoUTF16((__le16 *) bcc_ptr, ses->user_name,
-					    MAX_USERNAME_SIZE, nls_cp);
+		bytes_ret = cifs_strtoUCS((__le16 *) bcc_ptr, ses->user_name,
+					  MAX_USERNAME_SIZE, nls_cp);
 	}
 	bcc_ptr += 2 * bytes_ret;
 	bcc_ptr += 2; /* account for null termination */
@@ -286,7 +284,7 @@ decode_unicode_ssetup(char **pbcc_area, int bleft, struct cifs_ses *ses,
 	cFYI(1, "bleft %d", bleft);
 
 	kfree(ses->serverOS);
-	ses->serverOS = cifs_strndup_from_utf16(data, bleft, true, nls_cp);
+	ses->serverOS = cifs_strndup_from_ucs(data, bleft, true, nls_cp);
 	cFYI(1, "serverOS=%s", ses->serverOS);
 	len = (UniStrnlen((wchar_t *) data, bleft / 2) * 2) + 2;
 	data += len;
@@ -295,7 +293,7 @@ decode_unicode_ssetup(char **pbcc_area, int bleft, struct cifs_ses *ses,
 		return;
 
 	kfree(ses->serverNOS);
-	ses->serverNOS = cifs_strndup_from_utf16(data, bleft, true, nls_cp);
+	ses->serverNOS = cifs_strndup_from_ucs(data, bleft, true, nls_cp);
 	cFYI(1, "serverNOS=%s", ses->serverNOS);
 	len = (UniStrnlen((wchar_t *) data, bleft / 2) * 2) + 2;
 	data += len;
@@ -304,7 +302,7 @@ decode_unicode_ssetup(char **pbcc_area, int bleft, struct cifs_ses *ses,
 		return;
 
 	kfree(ses->serverDomain);
-	ses->serverDomain = cifs_strndup_from_utf16(data, bleft, true, nls_cp);
+	ses->serverDomain = cifs_strndup_from_ucs(data, bleft, true, nls_cp);
 	cFYI(1, "serverDomain=%s", ses->serverDomain);
 
 	return;
@@ -394,10 +392,6 @@ static int decode_ntlmssp_challenge(char *bcc_ptr, int blob_len,
 	ses->ntlmssp->server_flags = le32_to_cpu(pblob->NegotiateFlags);
 	tioffset = le32_to_cpu(pblob->TargetInfoArray.BufferOffset);
 	tilen = le16_to_cpu(pblob->TargetInfoArray.Length);
-	if (tioffset > blob_len || tioffset + tilen > blob_len) {
-		cERROR(1, "tioffset + tilen too high %u + %u", tioffset, tilen);
-		return -EINVAL;
-	}
 	if (tilen) {
 		ses->auth_key.response = kmalloc(tilen, GFP_KERNEL);
 		if (!ses->auth_key.response) {
@@ -505,8 +499,8 @@ static int build_ntlmssp_auth_blob(unsigned char *pbuffer,
 		tmp += 2;
 	} else {
 		int len;
-		len = cifs_strtoUTF16((__le16 *)tmp, ses->domainName,
-				      MAX_USERNAME_SIZE, nls_cp);
+		len = cifs_strtoUCS((__le16 *)tmp, ses->domainName,
+				    MAX_USERNAME_SIZE, nls_cp);
 		len *= 2; /* unicode is 2 bytes each */
 		sec_blob->DomainName.BufferOffset = cpu_to_le32(tmp - pbuffer);
 		sec_blob->DomainName.Length = cpu_to_le16(len);
@@ -521,8 +515,8 @@ static int build_ntlmssp_auth_blob(unsigned char *pbuffer,
 		tmp += 2;
 	} else {
 		int len;
-		len = cifs_strtoUTF16((__le16 *)tmp, ses->user_name,
-				      MAX_USERNAME_SIZE, nls_cp);
+		len = cifs_strtoUCS((__le16 *)tmp, ses->user_name,
+				    MAX_USERNAME_SIZE, nls_cp);
 		len *= 2; /* unicode is 2 bytes each */
 		sec_blob->UserName.BufferOffset = cpu_to_le32(tmp - pbuffer);
 		sec_blob->UserName.Length = cpu_to_le16(len);
@@ -686,7 +680,7 @@ ssetup_ntlmssp_authenticate:
 			cpu_to_le16(CIFS_AUTH_RESP_SIZE);
 
 		/* calculate ntlm response and session key */
-		rc = setup_ntlm_response(ses, nls_cp);
+		rc = setup_ntlm_response(ses);
 		if (rc) {
 			cERROR(1, "Error %d during NTLM authentication", rc);
 			goto ssetup_exit;
