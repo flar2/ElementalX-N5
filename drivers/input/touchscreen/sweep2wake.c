@@ -65,9 +65,7 @@ MODULE_LICENSE("GPLv2");
 
 /* Resources */
 int s2w_switch = 1;
-bool irq_wake = false;
-static int touch_x = 0;
-static int touch_y = 0;
+static int touch_x = 0, touch_y = 0;
 static bool touch_x_called = false, touch_y_called = false;
 static bool scr_suspended = false, exec_count = true;
 static bool scr_on_touch = false, barrier[2] = {false, false};
