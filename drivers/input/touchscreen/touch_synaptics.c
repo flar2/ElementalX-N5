@@ -1609,8 +1609,8 @@ static int synaptics_ts_start(struct synaptics_ts_data *ts)
 			&ts->work_init, msecs_to_jiffies(BOOTING_DELAY));
 
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_PREVENT_SLEEP
-		if (device_may_wakeup(&ts->client->dev))
-			disable_irq_wake(ts->client->irq);
+	if (device_may_wakeup(&ts->client->dev))
+		disable_irq_wake(ts->client->irq);
 #endif
 
 	return 0;
@@ -1623,17 +1623,18 @@ static int synaptics_ts_stop(struct synaptics_ts_data *ts)
 	if (!ts->curr_resume_state) {
 		return 0;
 	}
+
+	ts->curr_resume_state = 0;
+
+	if (ts->fw_info.fw_upgrade.is_downloading == UNDER_DOWNLOADING) {
+		TOUCH_INFO_MSG("stop is not executed\n");
+		return 0;
+	}
+
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_PREVENT_SLEEP
 	if (s2w_switch == 0)
 #endif
 	{
-		ts->curr_resume_state = 0;
-
-		if (ts->fw_info.fw_upgrade.is_downloading == UNDER_DOWNLOADING) {
-			TOUCH_INFO_MSG("stop is not executed\n");
-			return 0;
-		}
-
 		disable_irq(ts->client->irq);
 
 		cancel_delayed_work_sync(&ts->work_init);
@@ -1795,6 +1796,7 @@ static int synaptics_ts_probe(
 	ret = request_threaded_irq(client->irq, NULL, touch_irq_handler,
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_PREVENT_SLEEP
 			IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND, client->name, ts);
+	device_init_wakeup(&client->dev, 1);
 #else
 			IRQF_TRIGGER_FALLING | IRQF_ONESHOT, client->name, ts);
 #endif
