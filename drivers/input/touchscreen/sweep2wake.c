@@ -28,7 +28,13 @@
 #include <linux/input/sweep2wake.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
+#include <linux/input.h>
+#ifndef CONFIG_HAS_EARLYSUSPEND
 #include <linux/lcd_notify.h>
+#else
+#include <linux/earlysuspend.h>
+#endif
+#include <linux/hrtimer.h>
 
 /* Version, author, desc, etc */
 #define DRIVER_AUTHOR "Dennis Rassmann <showp1984@gmail.com>"

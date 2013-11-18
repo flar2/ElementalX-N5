@@ -21,15 +21,6 @@
 #ifndef _LINUX_SWEEP2WAKE_H
 #define _LINUX_SWEEP2WAKE_H
 
-#include <linux/input.h>
-#include <linux/earlysuspend.h>
-#include <linux/hrtimer.h>
-
-#define SWEEP2WAKE_I2C_SLEEP 40
-
 extern int s2w_switch;
-
-/* PowerKey setter */
-extern void sweep2wake_setdev(struct input_dev *);
 
 #endif	/* _LINUX_SWEEP2WAKE_H */
