@@ -1684,7 +1684,7 @@ static int lcd_notifier_callback(struct notifier_block *this,
 		}
 		mutex_unlock(&ts->input_dev->mutex);
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_PREVENT_SLEEP
-		if (device_may_wakeup(&ts->client->dev))
+		if (s2w_switch > 0)
 			disable_irq_wake(ts->client->irq);
 #endif
 		break;
@@ -1707,7 +1707,7 @@ static int lcd_notifier_callback(struct notifier_block *this,
 			mutex_unlock(&ts->input_dev->mutex);
 		}
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_PREVENT_SLEEP
-		if (device_may_wakeup(&ts->client->dev))
+		if (s2w_switch > 0)
 			enable_irq_wake(ts->client->irq);
 #endif
 		break;
@@ -1845,7 +1845,6 @@ static int synaptics_ts_probe(
 	ret = request_threaded_irq(client->irq, NULL, touch_irq_handler,
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE_PREVENT_SLEEP
 			IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND, client->name, ts);
-	device_init_wakeup(&client->dev, 1);
 #else
 			IRQF_TRIGGER_FALLING | IRQF_ONESHOT, client->name, ts);
 #endif
