@@ -42,7 +42,8 @@ MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPLv2");
 
 /* Tuneables */
-#define DEBUG                   0
+#define S2W_DEBUG		0
+#define S2W_DEFAULT		0
 #define S2W_PWRKEY_DUR          60
 
 #ifdef CONFIG_MACH_MSM8974_HAMMERHEAD
@@ -64,7 +65,7 @@ MODULE_LICENSE("GPLv2");
 
 
 /* Resources */
-int s2w_switch = 1;
+int s2w_switch = S2W_DEFAULT;
 static int touch_x = 0, touch_y = 0;
 static bool touch_x_called = false, touch_y_called = false;
 static bool scr_suspended = false, exec_count = true;
@@ -125,7 +126,7 @@ static void detect_sweep2wake(int x, int y, bool st)
 {
         int prevx = 0, nextx = 0;
         bool single_touch = st;
-#if DEBUG
+#if S2W_DEBUG
         pr_info(LOGTAG"x,y(%4d,%4d) single:%s\n",
                 x, y, (single_touch) ? "true" : "false");
 #endif
@@ -200,7 +201,7 @@ static void s2w_input_callback(struct work_struct *unused) {
 
 static void s2w_input_event(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
-#if DEBUG
+#if S2W_DEBUG
 	pr_info("sweep2wake: code: %s|%u, val: %i\n",
 		((code==ABS_MT_POSITION_X) ? "X" :
 		(code==ABS_MT_POSITION_Y) ? "Y" :
