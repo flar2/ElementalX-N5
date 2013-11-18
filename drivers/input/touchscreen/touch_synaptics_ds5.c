@@ -1695,7 +1695,7 @@ static int lcd_notifier_callback(struct notifier_block *this,
 		{
 			mutex_lock(&ts->input_dev->mutex);
 			if (!cancel_delayed_work_sync(&ts->work_init))
-				disable_irq(ts->client->irq);
+				disable_irq_nosync(ts->client->irq);
 		}
 		break;
 	case LCD_EVENT_OFF_END:
