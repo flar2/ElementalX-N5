@@ -370,7 +370,7 @@ static ssize_t s2w_version_dump(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(version, (S_IWUSR|S_IRUGO),
+static DEVICE_ATTR(sweep2wake_version, (S_IWUSR|S_IRUGO),
 	s2w_version_show, s2w_version_dump);
 
 /*
@@ -431,9 +431,9 @@ static int __init sweep2wake_init(void)
 	if (rc) {
 		pr_warn("%s: sysfs_create_file failed for sweep2wake\n", __func__);
 	}
-	rc = sysfs_create_file(android_touch_kobj, &dev_attr_version.attr);
+	rc = sysfs_create_file(android_touch_kobj, &dev_attr_sweep2wake_version.attr);
 	if (rc) {
-		pr_warn("%s: sysfs_create_file failed for version\n", __func__);
+		pr_warn("%s: sysfs_create_file failed for sweep2wake_version\n", __func__);
 	}
 
 err_input_dev:
