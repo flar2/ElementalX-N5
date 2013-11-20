@@ -238,7 +238,12 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 			{
 			idle = priv->bin.total_time - priv->bin.busy_time;
 			idle = (idle > 0) ? idle : 0;
-			val = simple_governor(device, idle);
+			if (priv->governor == TZ_GOVERNOR_SIMPLE)
+				val = simple_governor(device, idle);
+			else
+				val = __secure_tz_entry3(TZ_UPDATE_ID,
+				(pwr->active_pwrlevel + 1)/2,
+				priv->bin.total_time, priv->bin.busy_time);
 			}
 #else
 			val = __secure_tz_entry3(TZ_UPDATE_ID,
