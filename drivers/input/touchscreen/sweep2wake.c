@@ -217,6 +217,11 @@ static void s2w_input_event(struct input_handle *handle, unsigned int type,
 		(code==ABS_MT_TRACKING_ID) ? "ID" :
 		"undef"), code, value);
 #endif
+	if (code == ABS_MT_SLOT) {
+		sweep2wake_reset();
+		return;
+	}
+
 	if (code == ABS_MT_TRACKING_ID && value == -1) {
 		sweep2wake_reset();
 		return;
