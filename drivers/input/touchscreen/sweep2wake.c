@@ -36,6 +36,9 @@
 #endif
 #include <linux/hrtimer.h>
 
+/* uncomment since no touchscreen defines android touch, do that here */
+//#define ANDROID_TOUCH_DECLARED
+
 /* Version, author, desc, etc */
 #define DRIVER_AUTHOR "Dennis Rassmann <showp1984@gmail.com>"
 #define DRIVER_DESCRIPTION "Sweep2wake for almost any device"
@@ -376,14 +379,11 @@ static DEVICE_ATTR(sweep2wake_version, (S_IWUSR|S_IRUGO),
 /*
  * INIT / EXIT stuff below here
  */
-#ifdef S2W_ANDROID_TOUCH_DECLARED
+#ifdef ANDROID_TOUCH_DECLARED
 extern struct kobject *android_touch_kobj;
 #else
-static struct kobject *android_touch_kobj;
+struct kobject *android_touch_kobj;
 EXPORT_SYMBOL_GPL(android_touch_kobj);
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-#define DT2W_ANDROID_TOUCH_DECLARED
-#endif
 #endif
 static int __init sweep2wake_init(void)
 {
@@ -424,7 +424,7 @@ static int __init sweep2wake_init(void)
 	register_early_suspend(&s2w_early_suspend_handler);
 #endif
 
-#ifndef S2W_ANDROID_TOUCH_DECLARED
+#ifndef ANDROID_TOUCH_DECLARED
 	android_touch_kobj = kobject_create_and_add("android_touch", NULL) ;
 	if (android_touch_kobj == NULL) {
 		pr_warn("%s: android_touch_kobj create_and_add failed\n", __func__);
@@ -449,7 +449,7 @@ err_alloc_dev:
 
 static void __exit sweep2wake_exit(void)
 {
-#ifndef S2W_ANDROID_TOUCH_DECLARED
+#ifndef ANDROID_TOUCH_DECLARED
 	kobject_del(android_touch_kobj);
 #endif
 #ifndef CONFIG_HAS_EARLYSUSPEND
