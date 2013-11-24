@@ -46,6 +46,7 @@ extern void lm3630_lcd_backlight_set_level(int level);
 
 static struct mdss_dsi_phy_ctrl phy_params;
 static struct mdss_panel_common_pdata *local_pdata;
+struct mdss_panel_data *cmds_panel_data;
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -1106,11 +1107,20 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 	int dlen, offset = 0;
 	bool rgb;
 	char tmp[3];
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 
 	if (cnt) {
 		cnt = 0;
 		return -EINVAL;
 	}
+
+	if (cmds_panel_data == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl = container_of(cmds_panel_data, struct mdss_dsi_ctrl_pdata,
+				panel_data);
 
 	rgb = local_pdata->on_cmds.cmds[cmd].dchdr.dlen == 0x19;
 	if (rgb)
@@ -1133,6 +1143,11 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 		buf += strlen(tmp) + 1;
 		cnt = strlen(tmp);
 	}
+
+	if (local_pdata->on_cmds.cmd_cnt)
+		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
+
+	pr_info("%s\n", __func__);
 
 	return rc;
 }
