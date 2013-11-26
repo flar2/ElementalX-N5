@@ -47,6 +47,7 @@ DEFINE_LED_TRIGGER(bl_led_trigger);
 extern void lm3630_lcd_backlight_set_level(int level);
 #endif
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#include <linux/input/prevent_sleep.h>
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
 #include <linux/input/sweep2wake.h>
 #endif
@@ -200,6 +201,8 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 #if defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
 	prevent_sleep = prevent_sleep || (dt2w_switch > 0);
 #endif
+	if (prevent_sleep && in_phone_call)
+		prevent_sleep = false;
 #endif
 #ifdef CONFIG_PWRKEY_SUSPEND
 	if (pwrkey_pressed)
@@ -365,6 +368,8 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 #if defined(CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE)
 	prevent_sleep = prevent_sleep || (dt2w_switch > 0);
 #endif
+	if (prevent_sleep && in_phone_call)
+		prevent_sleep = false;
 #endif
 #ifdef CONFIG_PWRKEY_SUSPEND
 	if (pwrkey_pressed)
