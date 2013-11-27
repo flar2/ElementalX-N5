@@ -1169,7 +1169,7 @@ read_one(kgamma_bp, 15);
 read_one(kgamma_bn, 17);
 read_one(kgamma_1,   1);
 read_one(kgamma_3,   3);
-read_one(kgamma_5,   5);
+read_one(kgamma_w,   5);
 read_one(kgamma_20, 20);
 read_one(kgamma_22, 22);
 
@@ -1189,7 +1189,7 @@ write_one(kgamma_bp, 15);
 write_one(kgamma_bn, 17);
 write_one(kgamma_1,   1);
 write_one(kgamma_3,   3);
-write_one(kgamma_5,   5);
+write_one(kgamma_w,   5);
 write_one(kgamma_20, 20);
 write_one(kgamma_22, 22);
 
@@ -1204,7 +1204,7 @@ define_one_rw(kgamma_bp);
 define_one_rw(kgamma_bn);
 define_one_rw(kgamma_1);
 define_one_rw(kgamma_3);
-define_one_rw(kgamma_5);
+define_one_rw(kgamma_w);
 define_one_rw(kgamma_20);
 define_one_rw(kgamma_22);
 
@@ -1217,7 +1217,7 @@ static struct attribute *dsi_panel_attributes[] = {
 	&dev_attr_kgamma_bn.attr,
 	&dev_attr_kgamma_1.attr,
 	&dev_attr_kgamma_3.attr,
-	&dev_attr_kgamma_5.attr,
+	&dev_attr_kgamma_w.attr,
 	&dev_attr_kgamma_20.attr,
 	&dev_attr_kgamma_22.attr,
 	NULL
