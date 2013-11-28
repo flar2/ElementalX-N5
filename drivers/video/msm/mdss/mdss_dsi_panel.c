@@ -297,9 +297,9 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 //Basic color preset 
 	if (color_preset == 1)
-		ctrl->on_cmds.cmds[1].payload[0] = 0x77;
+		local_pdata->on_cmds.cmds[1].payload[0] = 0x77;
 	else
-		ctrl->on_cmds.cmds[1].payload[0] = 0xFF;
+		local_pdata->on_cmds.cmds[1].payload[0] = 0xFF;
 
 	if (local_pdata->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
