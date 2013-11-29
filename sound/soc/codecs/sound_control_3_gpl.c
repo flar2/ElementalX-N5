@@ -22,7 +22,9 @@
 #include <linux/mfd/wcd9xxx/wcd9320_registers.h>
 
 #define SOUND_CONTROL_MAJOR_VERSION	3
-#define SOUND_CONTROL_MINOR_VERSION	1
+#define SOUND_CONTROL_MINOR_VERSION	2
+
+#define REG_SZ	21
 
 extern struct snd_soc_codec *fauxsound_codec_ptr;
 
@@ -32,7 +34,96 @@ unsigned int taiko_read(struct snd_soc_codec *codec, unsigned int reg);
 int taiko_write(struct snd_soc_codec *codec, unsigned int reg,
 		unsigned int value);
 
-int reg_access(unsigned int reg)
+
+static unsigned int cached_regs[] = {6, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+			    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			    0 };
+
+static unsigned int *cache_select(unsigned int reg)
+{
+	unsigned int *out = NULL;
+
+        switch (reg) {
+                case TAIKO_A_RX_HPH_L_GAIN:
+			out = &cached_regs[0];
+			break;
+                case TAIKO_A_RX_HPH_R_GAIN:
+			out = &cached_regs[1];
+			break;
+                case TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL:
+			out = &cached_regs[4];
+			break;
+                case TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL:
+			out = &cached_regs[5];
+			break;
+                case TAIKO_A_CDC_RX3_VOL_CTL_B2_CTL:
+			out = &cached_regs[6];
+			break;
+                case TAIKO_A_CDC_RX4_VOL_CTL_B2_CTL:
+			out = &cached_regs[7];
+			break;
+                case TAIKO_A_CDC_RX5_VOL_CTL_B2_CTL:
+			out = &cached_regs[8];
+			break;
+                case TAIKO_A_CDC_RX6_VOL_CTL_B2_CTL:
+			out = &cached_regs[9];
+			break;
+                case TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL:
+			out = &cached_regs[10];
+			break;
+                case TAIKO_A_CDC_TX1_VOL_CTL_GAIN:
+			out = &cached_regs[11];
+			break;
+                case TAIKO_A_CDC_TX2_VOL_CTL_GAIN:
+			out = &cached_regs[12];
+			break;
+                case TAIKO_A_CDC_TX3_VOL_CTL_GAIN:
+			out = &cached_regs[13];
+			break;
+                case TAIKO_A_CDC_TX4_VOL_CTL_GAIN:
+			out = &cached_regs[14];
+			break;
+                case TAIKO_A_CDC_TX5_VOL_CTL_GAIN:
+			out = &cached_regs[15];
+			break;
+                case TAIKO_A_CDC_TX6_VOL_CTL_GAIN:
+			out = &cached_regs[16];
+			break;
+                case TAIKO_A_CDC_TX7_VOL_CTL_GAIN:
+			out = &cached_regs[17];
+			break;
+                case TAIKO_A_CDC_TX8_VOL_CTL_GAIN:
+			out = &cached_regs[18];
+			break;
+                case TAIKO_A_CDC_TX9_VOL_CTL_GAIN:
+			out = &cached_regs[19];
+			break;
+                case TAIKO_A_CDC_TX10_VOL_CTL_GAIN:
+			out = &cached_regs[20];
+			break;
+        }
+	return out;
+}
+
+void snd_hax_cache_write(unsigned int reg, unsigned int value)
+{
+	unsigned int *tmp = cache_select(reg);
+
+	if (tmp != NULL)
+		*tmp = value;
+}
+EXPORT_SYMBOL(snd_hax_cache_write);
+
+unsigned int snd_hax_cache_read(unsigned int reg)
+{
+	if (cache_select(reg) != NULL)
+		return *cache_select(reg);
+	else
+		return -1;
+}
+EXPORT_SYMBOL(snd_hax_cache_read);
+
+int snd_hax_reg_access(unsigned int reg)
 {
 	int ret = 1;
 
@@ -66,7 +157,7 @@ int reg_access(unsigned int reg)
 	}
 	return ret;
 }
-EXPORT_SYMBOL(reg_access);
+EXPORT_SYMBOL(snd_hax_reg_access);
 
 static bool calc_checksum(unsigned int a, unsigned int b, unsigned int c)
 {
@@ -217,7 +308,8 @@ static ssize_t headphone_pa_gain_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t sound_control_version_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t sound_control_version_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "version: %u.%u\n",
 			SOUND_CONTROL_MAJOR_VERSION,
