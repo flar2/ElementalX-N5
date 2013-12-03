@@ -39,7 +39,10 @@
 #endif
 #include "mdss_dsi.h"
 
+#include <asm/system_info.h>
+
 #define DT_CMD_HDR 6
+#define GAMMA_COMPAT 11
 
 //Basic color preset
 int color_preset = 0;
@@ -1147,6 +1150,11 @@ static int read_local_on_cmds(char *buf, size_t cmd)
 	int i, len = 0;
 	int dlen;
 
+	if (system_rev != GAMMA_COMPAT) {
+		pr_err("Incompatible hardware revision: %d\n", system_rev);
+		return -EINVAL;
+	}
+
 	dlen = local_pdata->on_cmds.cmds[cmd].dchdr.dlen - 1;
 	if (!dlen)
 		return -ENOMEM;
@@ -1175,6 +1183,11 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 
 	if (cnt) {
 		cnt = 0;
+		return -EINVAL;
+	}
+
+	if (system_rev != GAMMA_COMPAT) {
+		pr_err("Incompatible hardware revision: %d\n", system_rev);
 		return -EINVAL;
 	}
 
@@ -1216,6 +1229,8 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 		buf += strlen(tmp) + 1;
 		cnt = strlen(tmp);
 	}
+
+	pr_info("%s\n", __func__);
 
 	return rc;
 }
