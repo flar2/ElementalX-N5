@@ -79,7 +79,9 @@ static int touch_x = 0, touch_y = 0;
 static bool touch_x_called = false, touch_y_called = false;
 static bool scr_suspended = false, exec_count = true;
 static bool scr_on_touch = false, barrier[2] = {false, false};
+#ifndef CONFIG_HAS_EARLYSUSPEND
 static struct notifier_block s2w_lcd_notif;
+#endif
 static struct input_dev * sweep2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static struct workqueue_struct *s2w_input_wq;
