@@ -281,6 +281,11 @@ endif # NETWORK_FILESYSTEMS
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 
+config ASYNC_FSYNC
+	bool
+	string "asynchronous fsync"
+	default y
+
 config RESTRICT_ROOTFS_SLAVE
 	bool "Android: Restrict rootfs slave mountspace to /storage"
 	help

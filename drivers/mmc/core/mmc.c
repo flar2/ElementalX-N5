@@ -58,6 +58,14 @@ static const unsigned int tacc_mant[] = {
 		__res & __mask;						\
 	})
 
+#ifdef CONFIG_ASYNC_FSYNC
+static unsigned int perf_degr;
+int emmc_perf_degr(void)
+{
+	return perf_degr;
+}
+#endif
+
 /*
  * Given the decoded CSD structure, decode the raw CID to our CID structure.
  */
