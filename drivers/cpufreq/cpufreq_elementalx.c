@@ -35,7 +35,7 @@
 #include <mach/kgsl.h>
 static int orig_up_threshold = 90;
 
-#define DEF_SAMPLING_RATE			(40000)
+#define DEF_SAMPLING_RATE			(30000)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
 #define DEF_FREQUENCY_UP_THRESHOLD		(80)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
@@ -1246,6 +1246,10 @@ if (dbs_tuners_ins.gboost) {
 		dbs_tuners_ins.up_threshold = 60 + (graphics_boost * 10);
 	} else {
 		dbs_tuners_ins.up_threshold = orig_up_threshold;
+	}
+	if ((graphics_boost == 3 || graphics_boost == 4) && dbs_tuners_ins.gboost) {
+		input_event_boost = true;
+		input_event_boost_expired = jiffies + usecs_to_jiffies(dbs_tuners_ins.sampling_rate * 2);
 	}
 //end
 
