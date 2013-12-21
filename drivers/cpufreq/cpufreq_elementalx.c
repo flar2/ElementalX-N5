@@ -34,6 +34,7 @@
 //gboost
 #include <mach/kgsl.h>
 static int orig_up_threshold = 90;
+static int g_count = 0;
 
 #define DEF_SAMPLING_RATE			(30000)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
@@ -1242,15 +1243,26 @@ if (dbs_tuners_ins.gboost) {
 }
 
 //graphics boost
-	if (graphics_boost < 4 && dbs_tuners_ins.gboost) {
+if (dbs_tuners_ins.gboost) {
+
+	if (g_count < 100 && graphics_boost < 5) {
+		++g_count;
+	} else if (g_count > 1) {
+		--g_count;
+		--g_count;
+	}
+
+	if (graphics_boost < 4 && g_count > 80) {
 		dbs_tuners_ins.up_threshold = 60 + (graphics_boost * 10);
 	} else {
 		dbs_tuners_ins.up_threshold = orig_up_threshold;
 	}
-	if ((graphics_boost == 3 || graphics_boost == 4) && dbs_tuners_ins.gboost) {
+	if (g_count > 40) {
 		input_event_boost = true;
 		input_event_boost_expired = jiffies + usecs_to_jiffies(dbs_tuners_ins.sampling_rate * 2);
 	}
+
+}
 //end
 
 	if (num_online_cpus() > 1) {
@@ -1573,8 +1585,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		this_dbs_info->cpu = cpu;
 		this_dbs_info->rate_mult = 1;
 		elementalx_powersave_bias_init_cpu(cpu);
-		set_two_phase_freq(1574000);
-	        set_input_event_min_freq_by_cpu(1, 1190000);
+		set_two_phase_freq(1267200);
+	        set_input_event_min_freq_by_cpu(1, 1267200);
         	set_input_event_min_freq_by_cpu(2, 1036000);
         	set_input_event_min_freq_by_cpu(3, 729000);
         	set_input_event_min_freq_by_cpu(4, 729000);
