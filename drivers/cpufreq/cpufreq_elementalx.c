@@ -1257,7 +1257,7 @@ if (dbs_tuners_ins.gboost) {
 	} else {
 		dbs_tuners_ins.up_threshold = orig_up_threshold;
 	}
-	if (g_count > 40) {
+	if (g_count > 35) {
 		input_event_boost = true;
 		input_event_boost_expired = jiffies + usecs_to_jiffies(dbs_tuners_ins.sampling_rate * 2);
 	}
