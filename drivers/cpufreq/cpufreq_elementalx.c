@@ -890,7 +890,7 @@ static inline void switch_normal_mode(void)
 	tbl_select[0] = 0;
 	tbl_select[1] = 1;
 	tbl_select[2] = 2;
-	tbl_select[3] = 3;
+	tbl_select[3] = 4;
 }
 
 static void switch_mode_timer(unsigned long data)
