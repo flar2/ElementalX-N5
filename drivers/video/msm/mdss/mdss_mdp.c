@@ -1818,11 +1818,12 @@ static int mdss_mdp_resume(struct platform_device *pdev)
 static int mdss_mdp_runtime_resume(struct device *dev)
 {
 	struct mdss_data_type *mdata = dev_get_drvdata(dev);
+	bool device_on = true;
 	if (!mdata)
 		return -ENODEV;
 
 	dev_dbg(dev, "pm_runtime: resuming...\n");
-
+	device_for_each_child(dev, &device_on, mdss_fb_suspres_panel);
 	mdss_mdp_footswitch_ctrl(mdata, true);
 
 	return 0;
@@ -1842,6 +1843,7 @@ static int mdss_mdp_runtime_idle(struct device *dev)
 static int mdss_mdp_runtime_suspend(struct device *dev)
 {
 	struct mdss_data_type *mdata = dev_get_drvdata(dev);
+	bool device_on = false;
 	if (!mdata)
 		return -ENODEV;
 	dev_dbg(dev, "pm_runtime: suspending...\n");
@@ -1850,6 +1852,7 @@ static int mdss_mdp_runtime_suspend(struct device *dev)
 		pr_err("MDP suspend failed\n");
 		return -EBUSY;
 	}
+	device_for_each_child(dev, &device_on, mdss_fb_suspres_panel);
 	mdss_mdp_footswitch_ctrl(mdata, false);
 
 	return 0;
