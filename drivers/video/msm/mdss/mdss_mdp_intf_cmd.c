@@ -56,6 +56,8 @@ struct mdss_mdp_cmd_ctx {
 
 struct mdss_mdp_cmd_ctx mdss_mdp_cmd_ctx_list[MAX_SESSIONS];
 
+unsigned int send_cmds = 0;
+
 static inline u32 mdss_mdp_cmd_line_count(struct mdss_mdp_ctl *ctl)
 {
 	struct mdss_mdp_mixer *mixer;
@@ -299,8 +301,10 @@ static void mdss_mdp_cmd_pingpong_done(void *arg)
 			       ctx->koff_cnt);
 			ctx->koff_cnt = 0;
 		}
-	} else
-		pr_err("%s: should not have pingpong interrupt!\n", __func__);
+	} else {
+		if (!send_cmds)
+			pr_err("%s: should not have pingpong interrupt!\n", __func__);
+	}
 
 	pr_debug("%s: ctl_num=%d intf_num=%d ctx=%d kcnt=%d\n", __func__,
 		ctl->num, ctl->intf_num, ctx->pp_num, ctx->koff_cnt);
@@ -409,6 +413,11 @@ int mdss_mdp_cmd_reconfigure_splash_done(struct mdss_mdp_ctl *ctl)
 	return ret;
 }
 
+void mdss_mdp_cmds_send(unsigned int on)
+{
+	send_cmds = on;
+}
+
 static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 {
 	struct mdss_mdp_cmd_ctx *ctx;
@@ -424,8 +433,15 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	}
 
 	spin_lock_irqsave(&ctx->clk_lock, flags);
-	if (ctx->koff_cnt > 0)
-		need_wait = 1;
+	if (ctx->koff_cnt > 0) {
+		if (send_cmds) {
+			atomic_inc(&ctx->pp_done_cnt);
+			schedule_work(&ctx->pp_done_work);
+			ctx->koff_cnt--;
+		} else {
+			need_wait = 1;
+		}
+	}
 	spin_unlock_irqrestore(&ctx->clk_lock, flags);
 
 	pr_debug("%s: need_wait=%d  intf_num=%d ctx=%p\n",
