@@ -38,7 +38,6 @@
 #include <linux/qpnp/power-on.h>
 #endif
 #include "mdss_dsi.h"
-#include "mdss_mdp.h"
 
 #include <asm/system_info.h>
 
@@ -58,7 +57,6 @@ DEFINE_LED_TRIGGER(bl_led_trigger);
 #if defined(CONFIG_BACKLIGHT_LM3630)
 extern void lm3630_lcd_backlight_set_level(int level);
 #endif
-extern void mdss_mdp_cmds_send(unsigned int on);
 
 static struct mdss_dsi_phy_ctrl phy_params;
 static struct mdss_panel_common_pdata *local_pdata;
@@ -1252,22 +1250,8 @@ static void send_local_on_cmds(struct work_struct *work)
 	ctrl = container_of(cmds_panel_data, struct mdss_dsi_ctrl_pdata,
 			    panel_data);
 
-	/* Prevent flicker during continous splash */
-	if (cmds_panel_data->panel_info.cont_splash_enabled)
-		return;
-
-	mdss_mdp_cmds_send(1);
-	gpio_set_value((ctrl->rst_gpio), 0);
-	udelay(200);
-	gpio_set_value((ctrl->rst_gpio), 1);
-	msleep(20);
-
-	if (ctrl->ctrl_state & CTRL_STATE_PANEL_INIT)
-		ctrl->ctrl_state &= ~CTRL_STATE_PANEL_INIT;
-
 	if (local_pdata->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
-	mdss_mdp_cmds_send(0);
 
 	pr_info("%s\n", __func__);
 }
