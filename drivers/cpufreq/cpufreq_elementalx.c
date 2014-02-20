@@ -125,7 +125,7 @@ extern int has_boost_cpu_func;
 static	struct cpufreq_frequency_table *tbl = NULL;
 static unsigned int *tblmap[TABLE_SIZE] __read_mostly;
 static unsigned int tbl_select[4];
-static unsigned int up_threshold_level[2] = {95, 85};
+static unsigned int up_threshold_level[2] __read_mostly = {95, 85};
 static int input_event_counter = 0;
 struct timer_list freq_mode_timer;
 
