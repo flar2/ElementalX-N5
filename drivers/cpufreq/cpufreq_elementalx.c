@@ -1623,7 +1623,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 			dbs_init_freq_map_table(policy);
 		}
-		if (!cpu)
+		if (0)
 			rc = input_register_handler(&dbs_input_handler);
 		mutex_unlock(&dbs_mutex);
 
@@ -1643,7 +1643,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		mutex_lock(&dbs_mutex);
 		dbs_enable--;
 		this_dbs_info->cur_policy = NULL;
-		if (!cpu)
+		if (0)
 			input_unregister_handler(&dbs_input_handler);
 		mutex_unlock(&dbs_mutex);
 		if (!dbs_enable) {
