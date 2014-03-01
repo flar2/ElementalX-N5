@@ -234,12 +234,15 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 			if (level > 255) level = 255;
 			else if (level < 2) level = 2;
 	
-			if (level < 20) {
+			if (level < 15) {
 				max_current = 0;
 				brightness = level - 1;
+			} else if (level < 89) {
+				max_current = 18;
+				brightness = 5 + ((level - 15) * 250 / 235);
 			} else {
 				max_current = 18;
-				brightness = 5 + ((level - 20) * 250 / 235);
+				brightness = level;
 			}
 	
 			lm3630_set_max_current_reg(dev, max_current);
