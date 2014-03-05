@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -589,6 +589,9 @@ int qpnp_pin_config(int gpio, struct qpnp_pin_cfg *param)
 	}
 	mutex_unlock(&qpnp_pin_chips_lock);
 
+	if (!q_spec)
+		return -ENODEV;
+
 	rc = _qpnp_pin_config(q_chip, q_spec, param);
 
 	return rc;
@@ -624,10 +627,27 @@ static int qpnp_pin_to_irq(struct gpio_chip *gpio_chip, unsigned offset)
 {
 	struct qpnp_pin_chip *q_chip = dev_get_drvdata(gpio_chip->dev);
 	struct qpnp_pin_spec *q_spec;
+	u32 intspec[3];
 
 	q_spec = qpnp_chip_gpio_get_spec(q_chip, offset);
 	if (!q_spec)
 		return -EINVAL;
+
+	/* if we have mapped this pin previously return the virq */
+	if (q_spec->irq)
+		return q_spec->irq;
+
+	/* call into irq_domain to get irq mapping */
+	intspec[0] = q_chip->spmi->sid;
+	intspec[1] = (q_spec->offset >> 8) & 0xFF;
+	intspec[2] = 0;
+	q_spec->irq = irq_create_of_mapping(q_chip->int_ctrl, intspec, 3);
+	if (!q_spec->irq) {
+		dev_err(&q_chip->spmi->dev, "%s: invalid irq for gpio %u\n",
+						__func__, q_spec->pmic_pin);
+		WARN_ON(1);
+		return -EINVAL;
+	}
 
 	return q_spec->irq;
 }
@@ -1141,7 +1161,7 @@ static int qpnp_pin_probe(struct spmi_device *spmi)
 	struct spmi_resource *d_node;
 	int i, rc;
 	int lowest_gpio = UINT_MAX, highest_gpio = 0;
-	u32 intspec[3], gpio;
+	u32 gpio;
 	char version[Q_REG_SUBTYPE - Q_REG_DIG_MAJOR_REV + 1];
 	const char *dev_name;
 
@@ -1225,6 +1245,8 @@ static int qpnp_pin_probe(struct spmi_device *spmi)
 		if (!res) {
 			dev_err(&spmi->dev, "%s: node %s is missing has no base address definition\n",
 				__func__, d_node->of_node->full_name);
+			rc = -EINVAL;
+			goto err_probe;
 		}
 
 		rc = of_property_read_u32(d_node->of_node,
@@ -1274,18 +1296,6 @@ static int qpnp_pin_probe(struct spmi_device *spmi)
 		if (rc)
 			goto err_probe;
 
-		/* call into irq_domain to get irq mapping */
-		intspec[0] = q_chip->spmi->sid;
-		intspec[1] = (q_spec->offset >> 8) & 0xFF;
-		intspec[2] = 0;
-		q_spec->irq = irq_create_of_mapping(q_chip->int_ctrl,
-							intspec, 3);
-		if (!q_spec->irq) {
-			dev_err(&spmi->dev, "%s: invalid irq for gpio %u\n",
-								__func__, gpio);
-			rc = -EINVAL;
-			goto err_probe;
-		}
 		/* initialize lookup table params */
 		qpnp_pmic_pin_set_spec(q_chip, gpio, q_spec);
 		qpnp_chip_gpio_set_spec(q_chip, i, q_spec);

@@ -31,8 +31,8 @@
 #define DSS_REG_W(base, offset, data)	REG_W((data), (base) + (offset))
 #define DSS_REG_R(base, offset)		REG_R((base) + (offset))
 
-#define GDSC_PHYS		0xFD8C2304
-#define GDSC_SIZE		0x4
+#define GDSC_PHYS		0xFD8C2300
+#define GDSC_SIZE		0x8
 
 #define DSI_PHY_PHYS		0xFD922A00
 #define DSI_PHY_SIZE		0x000000D4
@@ -163,7 +163,8 @@ static int mdss_gdsc_enabled(void)
 	if (!gdsc_base)
 		return 0;
 
-	return !!(readl_relaxed(gdsc_base) & BIT(31));
+	return (readl_relaxed(gdsc_base + 0x4) & BIT(31)) &&
+		(!(readl_relaxed(gdsc_base) & BIT(0)));
 }
 
 void hdmi_pll_disable(void)
@@ -870,6 +871,8 @@ static int dsi_pll_lock_status(void)
 	u32 status;
 	int pll_locked = 0;
 
+	dsi_pll_toggle_lock_detect();
+
 	/* poll for PLL ready status */
 	if (readl_poll_timeout_noirq((mdss_dsi_base +
 			DSI_0_PHY_PLL_UNIPHY_PLL_STATUS),
@@ -1139,6 +1142,11 @@ static int dsi_pll_enable(struct clk *c)
 	int i, rc = 0;
 	struct dsi_pll_vco_clk *vco = to_vco_clk(c);
 
+	if (!mdss_gdsc_enabled()) {
+		pr_err("%s: mdss GDSC is not enabled\n", __func__);
+		return -EPERM;
+	}
+
 	rc = clk_enable(mdss_ahb_clk);
 	if (rc) {
 		pr_err("%s: failed to enable mdss ahb clock. rc=%d\n",
@@ -1167,6 +1175,12 @@ static int dsi_pll_enable(struct clk *c)
 static void dsi_pll_disable(struct clk *c)
 {
 	int rc = 0;
+
+	if (!mdss_gdsc_enabled()) {
+		pr_warn("%s: mdss GDSC disabled before disabling DSI PLL\n",
+			__func__);
+		return;
+	}
 
 	rc = clk_enable(mdss_ahb_clk);
 	if (rc) {

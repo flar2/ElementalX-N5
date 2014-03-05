@@ -23,6 +23,11 @@ struct sdhci_next {
 	s32 cookie;
 };
 
+enum sdhci_power_policy {
+	SDHCI_PERFORMANCE_MODE,
+	SDHCI_POWER_SAVE_MODE,
+};
+
 struct sdhci_host {
 	/* Data set by hardware interface driver */
 	const char *hw_name;	/* Hardware bus name */
@@ -141,6 +146,19 @@ struct sdhci_host {
  * specification.
  */
 #define SDHCI_QUIRK2_USE_RESERVED_MAX_TIMEOUT		(1<<8)
+/*
+ * This is applicable for controllers that advertize timeout clock
+ * value in capabilities register (bit 5-0) as just 50MHz whereas the
+ * base clock frequency is 200MHz. So, the controller internally
+ * multiplies the value in timeout control register by 4 with the
+ * assumption that driver always uses fixed timeout clock value from
+ * capabilities register to calculate the timeout. But when the driver
+ * uses SDHCI_QUIRK2_ALWAYS_USE_BASE_CLOCK base clock frequency is directly
+ * controller by driver and it's rate varies upto max. 200MHz. This new quirk
+ * will be used in such cases to avoid controller mulplication when timeout is
+ * calculated based on the base clock.
+ */
+#define SDHCI_QUIRK2_DIVIDE_TOUT_BY_4 (1 << 9)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
@@ -172,6 +190,7 @@ struct sdhci_host {
 #define SDHCI_PV_ENABLED	(1<<8)	/* Preset value enabled */
 #define SDHCI_SDIO_IRQ_ENABLED	(1<<9)	/* SDIO irq enabled */
 #define SDHCI_HS200_NEEDS_TUNING (1<<10)	/* HS200 needs tuning */
+#define SDHCI_HS400_NEEDS_TUNING (1<<11)	/* HS400 needs tuning */
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -225,12 +244,15 @@ struct sdhci_host {
 
 	unsigned int cpu_dma_latency_us;
 	struct pm_qos_request pm_qos_req_dma;
+	unsigned int pm_qos_timeout_us;         /* timeout for PM QoS request */
+	struct device_attribute pm_qos_tout;
 
 	struct sdhci_next next_data;
 	ktime_t data_start_time;
 	struct mutex ios_mutex;
-	u32 auto_cmd_err_sts;
+	enum sdhci_power_policy power_policy;
 
+	u32 auto_cmd_err_sts;
 	unsigned long private[0] ____cacheline_aligned;
 };
 #endif /* LINUX_MMC_SDHCI_H */

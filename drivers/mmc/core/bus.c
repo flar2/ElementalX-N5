@@ -128,7 +128,17 @@ static void mmc_bus_shutdown(struct device *dev)
 	struct mmc_driver *drv = to_mmc_driver(dev->driver);
 	struct mmc_card *card = mmc_dev_to_card(dev);
 
-	if (drv && drv->shutdown)
+	if (!drv) {
+		pr_debug("%s: %s: drv is NULL\n", dev_name(dev), __func__);
+		return;
+	}
+
+	if (!card) {
+		pr_debug("%s: %s: card is NULL\n", dev_name(dev), __func__);
+		return;
+	}
+
+	if (drv->shutdown)
 		drv->shutdown(card);
 }
 
@@ -194,9 +204,11 @@ static int mmc_runtime_idle(struct device *dev)
 
 	if (mmc_use_core_runtime_pm(card->host)) {
 		ret = pm_schedule_suspend(dev, card->idle_timeout);
-		if (ret) {
-			pr_err("%s: %s: pm_schedule_suspend failed: err: %d\n",
-			       mmc_hostname(host), __func__, ret);
+		if ((ret < 0) && (dev->power.runtime_error ||
+				  dev->power.disable_depth > 0)) {
+			pr_err("%s: %s: %s: pm_schedule_suspend failed: err: %d\n",
+			       mmc_hostname(host), __func__, dev_name(dev),
+			       ret);
 			return ret;
 		}
 	}
@@ -387,10 +399,11 @@ int mmc_add_card(struct mmc_card *card)
 			mmc_card_ddr_mode(card) ? "DDR " : "",
 			type);
 	} else {
-		pr_info("%s: new %s%s%s%s%s card at address %04x\n",
+		pr_info("%s: new %s%s%s%s%s%s card at address %04x\n",
 			mmc_hostname(card->host),
 			mmc_card_uhs(card) ? "ultra high speed " :
 			(mmc_card_highspeed(card) ? "high speed " : ""),
+			(mmc_card_hs400(card) ? "HS400 " : ""),
 			(mmc_card_hs200(card) ? "HS200 " : ""),
 			mmc_card_ddr_mode(card) ? "DDR " : "",
 			uhs_bus_speed_mode, type, card->rca);
@@ -401,20 +414,18 @@ int mmc_add_card(struct mmc_card *card)
 #endif
 	mmc_init_context_info(card->host);
 
-	if (mmc_use_core_runtime_pm(card->host)) {
-		ret = pm_runtime_set_active(&card->dev);
-		if (ret)
-			pr_err("%s: %s: failed setting runtime active: ret: %d\n",
-			       mmc_hostname(card->host), __func__, ret);
-		else
-			pm_runtime_enable(&card->dev);
-	}
+	ret = pm_runtime_set_active(&card->dev);
+	if (ret)
+		pr_err("%s: %s: failed setting runtime active: ret: %d\n",
+		       mmc_hostname(card->host), __func__, ret);
+	else if (!mmc_card_sdio(card) && mmc_use_core_runtime_pm(card->host))
+		pm_runtime_enable(&card->dev);
 
 	ret = device_add(&card->dev);
 	if (ret)
 		return ret;
 
-	if (mmc_use_core_runtime_pm(card->host)) {
+	if (mmc_use_core_runtime_pm(card->host) && !mmc_card_sdio(card)) {
 		card->rpm_attrib.show = show_rpm_delay;
 		card->rpm_attrib.store = store_rpm_delay;
 		sysfs_attr_init(&card->rpm_attrib.attr);
@@ -456,6 +467,7 @@ void mmc_remove_card(struct mmc_card *card)
 	}
 
 	kfree(card->wr_pack_stats.packing_events);
+	kfree(card->cached_ext_csd);
 
 	put_device(&card->dev);
 }

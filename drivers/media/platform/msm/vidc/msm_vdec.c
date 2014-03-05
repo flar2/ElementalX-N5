@@ -1224,7 +1224,19 @@ int msm_vdec_cmd(struct msm_vidc_inst *inst, struct v4l2_decoder_cmd *dec)
 	}
 	switch (dec->cmd) {
 	case V4L2_DEC_QCOM_CMD_FLUSH:
+		if (core->state != VIDC_CORE_INVALID &&
+			inst->state ==  MSM_VIDC_CORE_INVALID) {
+			rc = msm_comm_recover_from_session_error(inst);
+			if (rc)
+				dprintk(VIDC_ERR,
+					"Failed to recover from session_error: %d\n",
+					rc);
+		}
 		rc = msm_comm_flush(inst, dec->flags);
+		if (rc) {
+			dprintk(VIDC_ERR,
+					"Failed to flush buffers: %d\n", rc);
+		}
 		break;
 	case V4L2_DEC_CMD_STOP:
 		if (core->state != VIDC_CORE_INVALID &&
@@ -1557,7 +1569,7 @@ static struct v4l2_ctrl **get_cluster(int type, int *size)
 int msm_vdec_ctrl_init(struct msm_vidc_inst *inst)
 {
 	int idx = 0;
-	struct v4l2_ctrl_config ctrl_cfg;
+	struct v4l2_ctrl_config ctrl_cfg = {0};
 	int ret_val = 0;
 
 	ret_val = v4l2_ctrl_handler_init(&inst->ctrl_handler, NUM_CTRLS);

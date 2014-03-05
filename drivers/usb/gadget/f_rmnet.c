@@ -1121,7 +1121,7 @@ static int frmnet_bind(struct usb_configuration *c, struct usb_function *f)
 			goto fail;
 	}
 
-	pr_info("%s: RmNet(%d) %s Speed, IN:%s OUT:%s\n",
+	pr_debug("%s: RmNet(%d) %s Speed, IN:%s OUT:%s\n",
 			__func__, dev->port_num,
 			gadget_is_dualspeed(cdev->gadget) ? "dual" : "full",
 			dev->port.in->name, dev->port.out->name);
@@ -1219,6 +1219,7 @@ static void frmnet_cleanup(void)
 	for (i = 0; i < nr_rmnet_ports; i++)
 		kfree(rmnet_ports[i].port);
 
+	gbam_cleanup();
 	nr_rmnet_ports = 0;
 	no_ctrl_smd_ports = 0;
 	no_ctrl_qti_ports = 0;

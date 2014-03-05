@@ -70,7 +70,7 @@ static struct workqueue_struct *workqueue;
  * performance cost, and for other reasons may not always be desired.
  * So we allow it it to be disabled.
  */
-bool use_spi_crc = 1;
+bool use_spi_crc = 0;
 module_param(use_spi_crc, bool, 0);
 
 /*
@@ -608,7 +608,7 @@ static int mmc_stop_request(struct mmc_host *host)
 	int err = 0;
 	u32 status;
 
-	if (!host->ops->stop_request || !card->ext_csd.hpi) {
+	if (!host->ops->stop_request || !card->ext_csd.hpi_en) {
 		pr_warn("%s: host ops stop_request() or HPI not supported\n",
 				mmc_hostname(host));
 		return -ENOTSUPP;
@@ -895,7 +895,8 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 			mmc_post_req(host, host->areq->mrq, 0);
 			host->areq = NULL;
 			if (areq) {
-				if (!(areq->cmd_flags & REQ_URGENT)) {
+				if (!(areq->cmd_flags &
+						MMC_REQ_NOREINSERT_MASK)) {
 					areq->reinsert_req(areq);
 					mmc_post_req(host, areq->mrq, 0);
 				} else {
@@ -1072,8 +1073,13 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 
 		if (!err && R1_CURRENT_STATE(status) == R1_STATE_TRAN)
 			break;
-		if (time_after(jiffies, prg_wait))
-			err = -ETIMEDOUT;
+		if (time_after(jiffies, prg_wait)) {
+			err = mmc_send_status(card, &status);
+			if (!err && R1_CURRENT_STATE(status) != R1_STATE_TRAN)
+				err = -ETIMEDOUT;
+			else
+				break;
+		}
 	} while (!err);
 
 out:
@@ -1301,6 +1307,11 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 	if (card->quirks & MMC_QUIRK_INAND_DATA_TIMEOUT) {
 		data->timeout_ns = 4000000000u; /* 4s */
 		data->timeout_clks = 0;
+	}
+	/* Some emmc cards require a longer read/write time */
+	if (card->quirks & MMC_QUIRK_BROKEN_DATA_TIMEOUT) {
+		if (data->timeout_ns <  4000000000u)
+			data->timeout_ns = 4000000000u;	/* 4s */
 	}
 }
 EXPORT_SYMBOL(mmc_set_data_timeout);
@@ -2588,7 +2599,7 @@ int mmc_can_reset(struct mmc_card *card)
 	if (mmc_card_sdio(card))
 		return 0;
 
-	if (mmc_card_mmc(card)) {
+	if (mmc_card_mmc(card) && (card->host->caps & MMC_CAP_HW_RESET)) {
 		rst_n_function = card->ext_csd.rst_n_function;
 		if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) !=
 		    EXT_CSD_RST_N_ENABLED)
@@ -2605,9 +2616,6 @@ static int mmc_do_hw_reset(struct mmc_host *host, int check)
 	if (!host->bus_ops->power_restore)
 		return -EOPNOTSUPP;
 
-	if (!(host->caps & MMC_CAP_HW_RESET))
-		return -EOPNOTSUPP;
-
 	if (!card)
 		return -EINVAL;
 
@@ -2617,10 +2625,10 @@ static int mmc_do_hw_reset(struct mmc_host *host, int check)
 	mmc_host_clk_hold(host);
 	mmc_set_clock(host, host->f_init);
 
-	if (mmc_card_sd(card))
-		mmc_power_cycle(host);
-	else if (host->ops->hw_reset)
+	if (mmc_card_mmc(card) && host->ops->hw_reset)
 		host->ops->hw_reset(host);
+	else
+		mmc_power_cycle(host);
 
 	/* If the reset has happened, then a status command will fail */
 	if (check) {
@@ -2691,13 +2699,19 @@ EXPORT_SYMBOL_GPL(mmc_reset_clk_scale_stats);
 unsigned long mmc_get_max_frequency(struct mmc_host *host)
 {
 	unsigned long freq;
+	unsigned char timing;
 
 	if (host->ops && host->ops->get_max_frequency) {
 		freq = host->ops->get_max_frequency(host);
 		goto out;
 	}
 
-	switch (host->ios.timing) {
+	if (mmc_card_hs400(host->card))
+		timing = MMC_TIMING_MMC_HS400;
+	else
+		timing = host->ios.timing;
+
+	switch (timing) {
 	case MMC_TIMING_UHS_SDR50:
 		freq = UHS_SDR50_MAX_DTR;
 		break;
@@ -2709,6 +2723,9 @@ unsigned long mmc_get_max_frequency(struct mmc_host *host)
 		break;
 	case MMC_TIMING_UHS_DDR50:
 		freq = UHS_DDR50_MAX_DTR;
+		break;
+	case MMC_TIMING_MMC_HS400:
+		freq = MMC_HS400_MAX_DTR;
 		break;
 	default:
 		mmc_host_clk_hold(host);
@@ -2748,6 +2765,9 @@ static unsigned long mmc_get_min_frequency(struct mmc_host *host)
 		freq = UHS_SDR25_MAX_DTR;
 		break;
 	case MMC_TIMING_MMC_HS200:
+		freq = MMC_HIGH_52_MAX_DTR;
+		break;
+	case MMC_TIMING_MMC_HS400:
 		freq = MMC_HIGH_52_MAX_DTR;
 		break;
 	case MMC_TIMING_UHS_DDR50:
@@ -3127,6 +3147,7 @@ void mmc_rescan(struct work_struct *work)
 		return;
 
 	mmc_bus_get(host);
+	mmc_rpm_hold(host, &host->class_dev);
 
 	/*
 	 * if there is a _removable_ card registered, check whether it is
@@ -3159,9 +3180,12 @@ void mmc_rescan(struct work_struct *work)
 
 	/* if there still is a card present, stop here */
 	if (host->bus_ops != NULL) {
+		mmc_rpm_release(host, &host->class_dev);
 		mmc_bus_put(host);
 		goto out;
 	}
+
+	mmc_rpm_release(host, &host->class_dev);
 
 	/*
 	 * Only we can add a new handler, so it's safe to

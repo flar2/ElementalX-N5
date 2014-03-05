@@ -862,7 +862,8 @@ static void msm_otg_bus_vote(struct msm_otg *motg, enum usb_bus_vote vote)
 	struct msm_otg_platform_data *pdata = motg->pdata;
 
 	/* Check if target allows min_vote to be same as no_vote */
-	if (vote >= pdata->bus_scale_table->num_usecases)
+	if (pdata->bus_scale_table &&
+	    vote >= pdata->bus_scale_table->num_usecases)
 		vote = USB_NO_PERF_VOTE;
 
 	if (motg->bus_perf_client) {
@@ -992,8 +993,9 @@ static int msm_otg_suspend(struct msm_otg *motg)
 	 * BC1.2 spec mandates PD to enable VDP_SRC when charging from DCP.
 	 * PHY retention and collapse can not happen with VDP_SRC enabled.
 	 */
-	if (motg->caps & ALLOW_PHY_RETENTION && !host_bus_suspend &&
-		!device_bus_suspend && !dcp) {
+	if (motg->caps & ALLOW_PHY_RETENTION && !device_bus_suspend && !dcp &&
+		 (!host_bus_suspend || ((motg->caps & ALLOW_HOST_PHY_RETENTION)
+		&& (pdata->dpdm_pulldown_added || !(portsc & PORTSC_CCS))))) {
 		phy_ctrl_val = readl_relaxed(USB_PHY_CTRL);
 		if (motg->pdata->otg_control == OTG_PHY_CONTROL) {
 			/* Enable PHY HV interrupts to wake MPM/Link */
@@ -1004,7 +1006,8 @@ static int msm_otg_suspend(struct msm_otg *motg)
 			else
 				phy_ctrl_val |= PHY_OTGSESSVLDHV_INTEN;
 		}
-
+		if (host_bus_suspend)
+			phy_ctrl_val |= PHY_CLAMP_DPDMSE_EN;
 		writel_relaxed(phy_ctrl_val & ~PHY_RETEN, USB_PHY_CTRL);
 		motg->lpm_flags |= PHY_RETENTIONED;
 	}
@@ -1021,7 +1024,8 @@ static int msm_otg_suspend(struct msm_otg *motg)
 	}
 
 	/* usb phy no more require TCXO clock, hence vote for TCXO disable */
-	if (!host_bus_suspend) {
+	if (!host_bus_suspend || ((motg->caps & ALLOW_HOST_PHY_RETENTION) &&
+		(pdata->dpdm_pulldown_added || !(portsc & PORTSC_CCS)))) {
 		if (!IS_ERR(motg->xo_clk)) {
 			clk_disable_unprepare(motg->xo_clk);
 			motg->lpm_flags |= XO_SHUTDOWN;
@@ -1062,12 +1066,17 @@ static int msm_otg_suspend(struct msm_otg *motg)
 		if (pdata->otg_control == OTG_PHY_CONTROL &&
 			pdata->mpm_otgsessvld_int)
 			msm_mpm_set_pin_wake(pdata->mpm_otgsessvld_int, 1);
+		if (host_bus_suspend && pdata->mpm_dpshv_int)
+			msm_mpm_set_pin_wake(pdata->mpm_dpshv_int, 1);
+		if (host_bus_suspend && pdata->mpm_dmshv_int)
+			msm_mpm_set_pin_wake(pdata->mpm_dmshv_int, 1);
 	}
 	if (bus)
 		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &(bus_to_hcd(bus))->flags);
 
 	msm_otg_bus_vote(motg, USB_NO_PERF_VOTE);
 
+	motg->host_bus_suspend = host_bus_suspend;
 	atomic_set(&motg->in_lpm, 1);
 	/* Enable ASYNC IRQ (if present) during LPM */
 	if (motg->async_irq)
@@ -1138,6 +1147,7 @@ static int msm_otg_resume(struct msm_otg *motg)
 			/* Disable PHY HV interrupts */
 			phy_ctrl_val &=
 				~(PHY_IDHV_INTEN | PHY_OTGSESSVLDHV_INTEN);
+		phy_ctrl_val &= ~(PHY_CLAMP_DPDMSE_EN);
 		writel_relaxed(phy_ctrl_val, USB_PHY_CTRL);
 		motg->lpm_flags &= ~PHY_RETENTIONED;
 	}
@@ -1185,6 +1195,10 @@ skip_phy_resume:
 		if (pdata->otg_control == OTG_PHY_CONTROL &&
 			pdata->mpm_otgsessvld_int)
 			msm_mpm_set_pin_wake(pdata->mpm_otgsessvld_int, 0);
+		if (motg->host_bus_suspend && pdata->mpm_dpshv_int)
+			msm_mpm_set_pin_wake(pdata->mpm_dpshv_int, 0);
+		if (motg->host_bus_suspend && pdata->mpm_dmshv_int)
+			msm_mpm_set_pin_wake(pdata->mpm_dmshv_int, 0);
 	}
 	if (bus)
 		set_bit(HCD_FLAG_HW_ACCESSIBLE, &(bus_to_hcd(bus))->flags);
@@ -3804,6 +3818,37 @@ static int msm_otg_register_power_supply(struct platform_device *pdev,
 	return 0;
 }
 
+static ssize_t dpdm_pulldown_enable_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct msm_otg *motg = the_msm_otg;
+	struct msm_otg_platform_data *pdata = motg->pdata;
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", pdata->dpdm_pulldown_added ?
+							"enabled" : "disabled");
+}
+
+static ssize_t dpdm_pulldown_enable_store(struct device *dev,
+		struct device_attribute *attr, const char
+		*buf, size_t size)
+{
+	struct msm_otg *motg = the_msm_otg;
+	struct msm_otg_platform_data *pdata = motg->pdata;
+
+	if (!strnicmp(buf, "enable", 6)) {
+		pdata->dpdm_pulldown_added = true;
+		return size;
+	} else if (!strnicmp(buf, "disable", 7)) {
+		pdata->dpdm_pulldown_added = false;
+		return size;
+	}
+
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(dpdm_pulldown_enable, S_IRUGO | S_IWUSR,
+		dpdm_pulldown_enable_show, dpdm_pulldown_enable_store);
+
 struct msm_otg_platform_data *msm_otg_dt_to_pdata(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
@@ -3851,6 +3896,10 @@ struct msm_otg_platform_data *msm_otg_dt_to_pdata(struct platform_device *pdev)
 	pdata->enable_sec_phy = of_property_read_bool(node,
 					"qcom,usb2-enable-hsphy2");
 
+	of_property_read_u32(node, "qcom,hsusb-otg-mpm-dpsehv-int",
+				&pdata->mpm_dpshv_int);
+	of_property_read_u32(node, "qcom,hsusb-otg-mpm-dmsehv-int",
+				&pdata->mpm_dmshv_int);
 	pdata->pmic_id_irq = platform_get_irq_byname(pdev, "pmic_id_irq");
 	if (pdata->pmic_id_irq < 0)
 		pdata->pmic_id_irq = 0;
@@ -3988,18 +4037,34 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 		goto put_core_clk;
 	}
 
+	/*
+	 * On few platforms USB PHY is fed with sleep clk.
+	 * Hence don't fail probe.
+	 */
+	motg->sleep_clk = devm_clk_get(&pdev->dev, "sleep_clk");
+	if (IS_ERR(motg->sleep_clk)) {
+		dev_dbg(&pdev->dev, "failed to get sleep_clk\n");
+	} else {
+		ret = clk_prepare_enable(motg->sleep_clk);
+		if (ret) {
+			dev_err(&pdev->dev, "%s failed to vote sleep_clk%d\n",
+							__func__, ret);
+			goto put_pclk;
+		}
+	}
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		dev_err(&pdev->dev, "failed to get platform resource mem\n");
 		ret = -ENODEV;
-		goto put_pclk;
+		goto disable_sleep_clk;
 	}
 
 	motg->regs = ioremap(res->start, resource_size(res));
 	if (!motg->regs) {
 		dev_err(&pdev->dev, "ioremap failed\n");
 		ret = -ENOMEM;
-		goto put_pclk;
+		goto disable_sleep_clk;
 	}
 	dev_info(&pdev->dev, "OTG regs = %p\n", motg->regs);
 
@@ -4148,6 +4213,11 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 	if (pdata->otg_control == OTG_PHY_CONTROL && pdata->mpm_otgsessvld_int)
 		msm_mpm_enable_pin(pdata->mpm_otgsessvld_int, 1);
 
+	if (pdata->mpm_dpshv_int)
+		msm_mpm_enable_pin(pdata->mpm_dpshv_int, 1);
+	if (pdata->mpm_dmshv_int)
+		msm_mpm_enable_pin(pdata->mpm_dmshv_int, 1);
+
 	phy->init = msm_otg_reset;
 	phy->set_power = msm_otg_set_power;
 	phy->set_suspend = msm_otg_set_suspend;
@@ -4211,6 +4281,11 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 		if (motg->pdata->otg_control == OTG_PHY_CONTROL)
 			motg->caps = ALLOW_PHY_RETENTION |
 				ALLOW_PHY_REGULATORS_LPM;
+
+		if (motg->pdata->mpm_dpshv_int || motg->pdata->mpm_dmshv_int)
+			motg->caps |= ALLOW_HOST_PHY_RETENTION;
+			device_create_file(&pdev->dev,
+					&dev_attr_dpdm_pulldown_enable);
 	}
 
 	if (motg->pdata->enable_lpm_on_dev_suspend)
@@ -4284,6 +4359,9 @@ free_xo_handle:
 		msm_xo_put(motg->xo_handle);
 free_regs:
 	iounmap(motg->regs);
+disable_sleep_clk:
+	if (!IS_ERR(motg->sleep_clk))
+		clk_disable_unprepare(motg->sleep_clk);
 put_pclk:
 	clk_put(motg->pclk);
 put_core_clk:
@@ -4334,9 +4412,18 @@ static int __devexit msm_otg_remove(struct platform_device *pdev)
 	usb_set_transceiver(NULL);
 	free_irq(motg->irq, motg);
 
+	if ((motg->pdata->phy_type == SNPS_28NM_INTEGRATED_PHY) &&
+		(motg->pdata->mpm_dpshv_int || motg->pdata->mpm_dmshv_int))
+			device_remove_file(&pdev->dev,
+					&dev_attr_dpdm_pulldown_enable);
 	if (motg->pdata->otg_control == OTG_PHY_CONTROL &&
 		motg->pdata->mpm_otgsessvld_int)
 		msm_mpm_enable_pin(motg->pdata->mpm_otgsessvld_int, 0);
+
+	if (motg->pdata->mpm_dpshv_int)
+		msm_mpm_enable_pin(motg->pdata->mpm_dpshv_int, 0);
+	if (motg->pdata->mpm_dmshv_int)
+		msm_mpm_enable_pin(motg->pdata->mpm_dmshv_int, 0);
 
 	/*
 	 * Put PHY in low power mode.
@@ -4362,6 +4449,10 @@ static int __devexit msm_otg_remove(struct platform_device *pdev)
 	} else {
 		msm_xo_put(motg->xo_handle);
 	}
+
+	if (!IS_ERR(motg->sleep_clk))
+		clk_disable_unprepare(motg->sleep_clk);
+
 	msm_hsusb_ldo_enable(motg, USB_PHY_REG_OFF);
 	msm_hsusb_ldo_init(motg, 0);
 	regulator_disable(hsusb_vdd);

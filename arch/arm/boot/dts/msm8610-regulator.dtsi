@@ -356,3 +356,7 @@
 		};
 	};
 };
+
+&pm8110_chg_batif {
+	regulator-name = "batfet";
+};

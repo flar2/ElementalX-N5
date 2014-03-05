@@ -21,6 +21,7 @@ int msm_fw_debug = 0x18;
 int msm_fw_debug_mode = 0x1;
 int msm_fw_low_power_mode = 0x1;
 int msm_vp8_low_tier = 0x1;
+int msm_vidc_hw_rsp_timeout = 1000;
 
 struct debug_buffer {
 	char ptr[MAX_DBG_BUF_SIZE];
@@ -85,6 +86,18 @@ static ssize_t core_info_read(struct file *file, char __user *buf,
 	write_str(&dbg_buf, "irq: %u\n",
 		call_hfi_op(hdev, get_fw_info, hdev->hfi_device_data,
 					FW_IRQ));
+	write_str(&dbg_buf, "clock count: %d\n",
+		call_hfi_op(hdev, get_info, hdev->hfi_device_data,
+					DEV_CLOCK_COUNT));
+	write_str(&dbg_buf, "clock enabled: %u\n",
+		call_hfi_op(hdev, get_info, hdev->hfi_device_data,
+					DEV_CLOCK_ENABLED));
+	write_str(&dbg_buf, "power count: %d\n",
+		call_hfi_op(hdev, get_info, hdev->hfi_device_data,
+					DEV_PWR_COUNT));
+	write_str(&dbg_buf, "power enabled: %u\n",
+		call_hfi_op(hdev, get_info, hdev->hfi_device_data,
+					DEV_PWR_ENABLED));
 	for (i = SYS_MSG_START; i < SYS_MSG_END; i++) {
 		write_str(&dbg_buf, "completions[%d]: %s\n", i,
 			completion_done(&core->completions[SYS_MSG_INDEX(i)]) ?
@@ -178,6 +191,11 @@ struct dentry *msm_vidc_debugfs_init_core(struct msm_vidc_core *core,
 	}
 	if (!debugfs_create_u32("debug_output", S_IRUGO | S_IWUSR,
 			parent, &msm_vidc_debug_out)) {
+		dprintk(VIDC_ERR, "debugfs_create_file: fail\n");
+		goto failed_create_dir;
+	}
+	if (!debugfs_create_u32("hw_rsp_timeout", S_IRUGO | S_IWUSR,
+			parent, &msm_vidc_hw_rsp_timeout)) {
 		dprintk(VIDC_ERR, "debugfs_create_file: fail\n");
 		goto failed_create_dir;
 	}

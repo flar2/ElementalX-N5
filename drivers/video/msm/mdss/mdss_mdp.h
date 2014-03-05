@@ -426,6 +426,7 @@ static inline u32 mdss_mdp_pingpong_read(struct mdss_mdp_mixer *mixer, u32 reg)
 irqreturn_t mdss_mdp_isr(int irq, void *ptr);
 int mdss_iommu_attach(struct mdss_data_type *mdata);
 int mdss_mdp_video_copy_splash_screen(struct mdss_panel_data *pdata);
+int mdss_iommu_dettach(struct mdss_data_type *mdata);
 void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 		u32 intr_type, u32 intf_num);
 int mdss_mdp_irq_enable(u32 intr_type, u32 intf_num);
@@ -437,6 +438,7 @@ int mdss_mdp_set_intr_callback(u32 intr_type, u32 intf_num,
 			       void (*fnc_ptr)(void *), void *arg);
 
 void mdss_mdp_footswitch_ctrl_splash(int on);
+void mdss_mdp_batfet_ctrl(struct mdss_data_type *mdata, int enable);
 int mdss_mdp_bus_scale_set_quota(u64 ab_quota, u64 ib_quota);
 void mdss_mdp_set_clk_rate(unsigned long min_clk_rate);
 unsigned long mdss_mdp_get_clk_rate(u32 clk_idx);

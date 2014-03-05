@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@ enum {
 	MSM_SPM_L2_MODE_DISABLED = MSM_SPM_MODE_DISABLED,
 	MSM_SPM_L2_MODE_RETENTION,
 	MSM_SPM_L2_MODE_GDHS,
+	MSM_SPM_L2_MODE_PC_NO_RPM,
 	MSM_SPM_L2_MODE_POWER_COLLAPSE,
 };
 
@@ -150,7 +151,6 @@ int msm_spm_device_init(void);
 /* Public functions */
 
 int msm_spm_l2_set_low_power_mode(unsigned int mode, bool notify_rpm);
-int msm_spm_apcs_set_vdd(unsigned int vlevel);
 int msm_spm_apcs_set_phase(unsigned int phase_cnt);
 int msm_spm_enable_fts_lpm(uint32_t mode);
 
@@ -166,18 +166,15 @@ static inline int msm_spm_l2_set_low_power_mode(unsigned int mode,
 {
 	return -ENOSYS;
 }
+
 static inline int msm_spm_l2_init(struct msm_spm_platform_data *data)
 {
 	return -ENOSYS;
 }
+
 static inline void msm_spm_l2_reinit(void)
 {
 	/* empty */
-}
-
-static inline int msm_spm_apcs_set_vdd(unsigned int vlevel)
-{
-	return -ENOSYS;
 }
 
 static inline int msm_spm_apcs_set_phase(unsigned int phase_cnt)

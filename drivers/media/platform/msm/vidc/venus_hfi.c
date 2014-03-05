@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,6 +28,7 @@
 #include "venus_hfi.h"
 #include "vidc_hfi_io.h"
 #include "msm_vidc_debug.h"
+#include <linux/iopoll.h>
 
 #define FIRMWARE_SIZE			0X00A00000
 #define REG_ADDR_OFFSET_BITMASK	0x000FFFFF
@@ -61,6 +62,23 @@ struct tzbsp_memprot {
 struct tzbsp_resp {
 	int ret;
 };
+
+#define TZBSP_VIDEO_SET_STATE 0xa
+
+enum tzbsp_video_state {
+	TZBSP_VIDEO_STATE_SUSPEND = 0,
+	TZBSP_VIDEO_STATE_RESUME
+};
+
+struct tzbsp_video_set_state_req {
+	u32 state; /*shoud be tzbsp_video_state enum value*/
+	u32 spare; /*reserved for future, should be zero*/
+};
+
+static inline int venus_hfi_clk_gating_off(struct venus_hfi_device *device);
+
+static unsigned long venus_hfi_get_clock_rate(struct venus_core_clock *clock,
+		int num_mbs_per_sec);
 
 static void venus_hfi_dump_packet(u8 *packet)
 {
@@ -492,38 +510,320 @@ static int venus_hfi_read_register(struct venus_hfi_device *device, u32 reg)
 	rmb();
 	return rc;
 }
-static inline void venus_hfi_clk_gating_on(struct venus_hfi_device *device)
+
+static int venus_hfi_core_start_cpu(struct venus_hfi_device *device)
 {
+	u32 ctrl_status = 0, count = 0, rc = 0;
+	int max_tries = 100;
+	venus_hfi_write_register(device,
+			VIDC_WRAPPER_INTR_MASK, VIDC_WRAPPER_INTR_MASK_A2HVCODEC_BMSK, 0);
+	venus_hfi_write_register(device,
+			VIDC_CPU_CS_SCIACMDARG3, 1, 0);
+
+	while (!ctrl_status && count < max_tries) {
+		ctrl_status = venus_hfi_read_register(
+				device,
+				VIDC_CPU_CS_SCIACMDARG0);
+		if ((ctrl_status & 0xFE) == 0x4) {
+			dprintk(VIDC_ERR, "invalid setting for UC_REGION\n");
+			break;
+		}
+		usleep_range(500, 1000);
+		count++;
+	}
+	if (count >= max_tries)
+		rc = -ETIME;
+	return rc;
+}
+
+static int venus_hfi_iommu_attach(struct venus_hfi_device *device)
+{
+	int rc = 0;
+	struct iommu_domain *domain;
 	int i;
-	struct venus_core_clock *cl;
-	if (!device) {
-		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
+	struct iommu_set *iommu_group_set;
+	struct iommu_group *group;
+	struct iommu_info *iommu_map;
+
+	if (!device || !device->res)
+		return -EINVAL;
+
+	iommu_group_set = &device->res->iommu_group_set;
+	for (i = 0; i < iommu_group_set->count; i++) {
+		iommu_map = &iommu_group_set->iommu_maps[i];
+		group = iommu_map->group;
+		domain = msm_get_iommu_domain(iommu_map->domain);
+		if (IS_ERR_OR_NULL(domain)) {
+			dprintk(VIDC_ERR,
+				"Failed to get domain: %s\n", iommu_map->name);
+			rc = PTR_ERR(domain);
+			break;
+		}
+		rc = iommu_attach_group(domain, group);
+		if (rc) {
+			dprintk(VIDC_ERR,
+				"IOMMU attach failed: %s\n", iommu_map->name);
+			break;
+		}
+	}
+	if (i < iommu_group_set->count) {
+		i--;
+		for (; i >= 0; i--) {
+			iommu_map = &iommu_group_set->iommu_maps[i];
+			group = iommu_map->group;
+			domain = msm_get_iommu_domain(iommu_map->domain);
+			if (group && domain)
+				iommu_detach_group(domain, group);
+		}
+	}
+	return rc;
+}
+
+static void venus_hfi_iommu_detach(struct venus_hfi_device *device)
+{
+	struct iommu_group *group;
+	struct iommu_domain *domain;
+	struct iommu_set *iommu_group_set;
+	struct iommu_info *iommu_map;
+	int i;
+
+	if (!device || !device->res) {
+		dprintk(VIDC_ERR, "Invalid paramter: %p\n", device);
 		return;
 	}
-	if (!device->clocks_enabled) {
-		dprintk(VIDC_DBG, "Clocks are already disabled");
-		goto already_disabled;
+
+	iommu_group_set = &device->res->iommu_group_set;
+	for (i = 0; i < iommu_group_set->count; i++) {
+		iommu_map = &iommu_group_set->iommu_maps[i];
+		group = iommu_map->group;
+		domain = msm_get_iommu_domain(iommu_map->domain);
+		if (group && domain)
+			iommu_detach_group(domain, group);
 	}
-	for (i = 0; i <= device->clk_gating_level; i++) {
-		cl = &device->resources.clock[i];
-		clk_disable(cl->clk);
-	}
-already_disabled:
-	device->clocks_enabled = 0;
 }
-static inline int venus_hfi_clk_gating_off(struct venus_hfi_device *device)
+
+static int venus_hfi_unvote_bus(void *dev,
+				enum session_type type, enum mem_type mtype)
+{
+	int rc = 0;
+	u32 handle = 0;
+	struct venus_hfi_device *device = dev;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "%s invalid device handle %p",
+			__func__, device);
+		return -EINVAL;
+	}
+
+	if (mtype & DDR_MEM)
+		handle = device->resources.bus_info.ddr_handle[type];
+	if (mtype & OCMEM_MEM)
+		handle = device->resources.bus_info.ocmem_handle[type];
+
+	if (handle) {
+		rc = msm_bus_scale_client_update_request(
+				handle, 0);
+		if (rc)
+			dprintk(VIDC_ERR, "Failed to unvote bus: %d\n", rc);
+	} else {
+		dprintk(VIDC_ERR, "Failed to unvote bus, mtype: %d\n",
+				mtype);
+		rc = -EINVAL;
+	}
+	return rc;
+}
+
+static void venus_hfi_unvote_buses(void *dev, enum mem_type mtype)
 {
 	int i;
-	struct venus_core_clock *cl;
+	struct venus_hfi_device *device = dev;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "%s invalid parameters", __func__);
+		return;
+	}
+
+	for (i = 0; i < MSM_VIDC_MAX_DEVICES; i++) {
+		if ((mtype & DDR_MEM) &&
+			venus_hfi_unvote_bus(device, i, DDR_MEM))
+			dprintk(VIDC_WARN,
+				"Failed to unvote for DDR accesses\n");
+
+		if ((mtype & OCMEM_MEM) &&
+			venus_hfi_unvote_bus(device, i, OCMEM_MEM))
+			dprintk(VIDC_WARN,
+				"Failed to unvote for OCMEM accesses\n");
+	}
+}
+
+static const u32 venus_hfi_bus_table[] = {
+	36000,
+	110400,
+	244800,
+	489000,
+	783360,
+	979200,
+};
+
+static int venus_hfi_get_bus_vector(struct venus_hfi_device *device, int load,
+			enum session_type type, enum mem_type mtype)
+{
+	int num_rows = sizeof(venus_hfi_bus_table)/(sizeof(u32));
+	int i, j;
+	int idx = 0;
+
+	if (!device || (mtype != DDR_MEM && mtype != OCMEM_MEM) ||
+		(type != MSM_VIDC_ENCODER && type != MSM_VIDC_DECODER)) {
+		dprintk(VIDC_ERR, "%s invalid params", __func__);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < num_rows; i++) {
+		if (load <= venus_hfi_bus_table[i])
+			break;
+	}
+
+	if (type == MSM_VIDC_ENCODER)
+		idx = (mtype == DDR_MEM) ? BUS_IDX_ENC_DDR : BUS_IDX_ENC_OCMEM;
+	else
+		idx = (mtype == DDR_MEM) ? BUS_IDX_DEC_DDR : BUS_IDX_DEC_OCMEM;
+
+	j = clamp(i, 0, num_rows-1) + 1;
+
+	/* Ensure bus index remains within the supported range,
+	* as specified in the device dtsi file */
+	j = clamp(j, 0, device->res->bus_pdata[idx].num_usecases - 1);
+
+	dprintk(VIDC_DBG, "Required bus = %d\n", j);
+	return j;
+}
+
+static int venus_hfi_scale_bus(void *dev, int load,
+				enum session_type type, enum mem_type mtype)
+{
 	int rc = 0;
+	u32 handle = 0;
+	struct venus_hfi_device *device = dev;
+	int bus_vector = 0;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "%s invalid device handle %p",
+			__func__, device);
+		return -EINVAL;
+	}
+
+	if (mtype & DDR_MEM)
+		handle = device->resources.bus_info.ddr_handle[type];
+	if (mtype & OCMEM_MEM)
+		handle = device->resources.bus_info.ocmem_handle[type];
+
+	if (handle) {
+		bus_vector = venus_hfi_get_bus_vector(device, load,
+				type, mtype);
+		if (bus_vector < 0) {
+			dprintk(VIDC_ERR, "Failed to get bus vector\n");
+			return -EINVAL;
+		}
+		device->bus_load[type] = load;
+		rc = msm_bus_scale_client_update_request(handle, bus_vector);
+		if (rc)
+			dprintk(VIDC_ERR, "Failed to scale bus: %d\n", rc);
+	} else {
+		dprintk(VIDC_ERR, "Failed to scale bus, mtype: %d\n",
+				mtype);
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+
+static int venus_hfi_scale_buses(void *dev, enum mem_type mtype)
+{
+	int i, rc = 0;
+	struct venus_hfi_device *device = dev;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "%s invalid parameters", __func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < MSM_VIDC_MAX_DEVICES; i++) {
+		if (mtype & DDR_MEM) {
+			rc = venus_hfi_scale_bus(device, device->bus_load[i],
+					i, DDR_MEM);
+			if (rc) {
+				dprintk(VIDC_ERR,
+						"Failed to scale bus for DDR accesses, session type %d, load %u\n",
+						i, device->bus_load[i]);
+				goto err_scale_bus;
+			}
+		}
+
+		if (mtype & OCMEM_MEM) {
+			rc = venus_hfi_scale_bus(device, device->bus_load[i],
+					i, OCMEM_MEM);
+			if (rc) {
+				dprintk(VIDC_ERR,
+						"Failed to scale bus for OCMEM accesses, session type %d, load %u\n",
+						i, device->bus_load[i]);
+				goto err_scale_bus;
+			}
+		}
+	}
+err_scale_bus:
+	return rc;
+}
+
+static inline int venus_hfi_tzbsp_set_video_state(enum tzbsp_video_state state)
+{
+	struct tzbsp_video_set_state_req cmd = {0};
+	int tzbsp_rsp = 0;
+	int rc = 0;
+	cmd.state = state;
+	cmd.spare = 0;
+	rc = scm_call(SCM_SVC_BOOT, TZBSP_VIDEO_SET_STATE, &cmd, sizeof(cmd),
+			&tzbsp_rsp, sizeof(tzbsp_rsp));
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed scm_call %d\n", rc);
+		return rc;
+	}
+	dprintk(VIDC_DBG, "Set state %d, resp %d\n", state, tzbsp_rsp);
+	if (tzbsp_rsp) {
+		dprintk(VIDC_ERR,
+				"Failed to set video core state to suspend: %d\n",
+				tzbsp_rsp);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static inline int venus_hfi_reset_core(struct venus_hfi_device *device)
+{
+	int rc = 0;
+	venus_hfi_write_register(device,
+			VIDC_CTRL_INIT, 0x1, 0);
+	rc = venus_hfi_core_start_cpu(device);
+	if (rc)
+		dprintk(VIDC_ERR, "Failed to start core");
+	return rc;
+}
+
+
+/*Calling function is responsible to acquire device->clk_pwr_lock*/
+static inline int venus_hfi_clk_enable(struct venus_hfi_device *device)
+{
+	int rc = 0;
+	int i;
+	struct venus_core_clock *cl;
+
 	if (!device) {
 		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
 		return -EINVAL;
 	}
 	if (device->clocks_enabled) {
-		dprintk(VIDC_DBG, "Clocks are already enabled");
-		goto already_enabled;
+		dprintk(VIDC_DBG, "Clocks already enabled");
+		return 0;
 	}
+
 	for (i = 0; i <= device->clk_gating_level; i++) {
 		cl = &device->resources.clock[i];
 		rc = clk_enable(cl->clk);
@@ -534,14 +834,221 @@ static inline int venus_hfi_clk_gating_off(struct venus_hfi_device *device)
 			dprintk(VIDC_DBG, "Clock: %s enabled\n", cl->name);
 		}
 	}
-already_enabled:
 	device->clocks_enabled = 1;
-	return rc;
+	++device->clk_cnt;
+	return 0;
 fail_clk_enable:
-	for (; i >= 0; i--) {
+	for (i--; i >= 0; i--) {
 		cl = &device->resources.clock[i];
+		usleep(100);
 		clk_disable(cl->clk);
 	}
+	return rc;
+}
+
+/*Calling function is responsible to acquire device->clk_pwr_lock*/
+static inline void venus_hfi_clk_disable(struct venus_hfi_device *device)
+{
+	int i, rc = 0;
+	struct venus_core_clock *cl;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
+		return;
+	}
+	if (!device->clocks_enabled) {
+		dprintk(VIDC_DBG, "Clocks already disabled");
+		return;
+	}
+
+	/* We get better power savings if we lower the venus core clock to the
+	 * lowest level before disabling it. */
+	rc = clk_set_rate(device->resources.clock[VCODEC_CLK].clk,
+			venus_hfi_get_clock_rate(
+			&device->resources.clock[VCODEC_CLK], 0));
+	if (rc)
+		dprintk(VIDC_WARN, "Failed to set clock rate to min: %d\n", rc);
+
+	for (i = 0; i <= device->clk_gating_level; i++) {
+		cl = &device->resources.clock[i];
+		usleep(100);
+		clk_disable(cl->clk);
+	}
+	device->clocks_enabled = 0;
+	--device->clk_cnt;
+}
+
+static DECLARE_COMPLETION(pc_prep_done);
+
+static int venus_hfi_halt_axi(struct venus_hfi_device *device)
+{
+	u32 reg;
+	int rc = 0;
+	if (!device) {
+		dprintk(VIDC_ERR, "Invalid input: %p\n", device);
+		return -EINVAL;
+	}
+	if (venus_hfi_clk_gating_off(device)) {
+		dprintk(VIDC_ERR, "Failed to turn off clk gating\n");
+		return -EIO;
+	}
+	/* Halt AXI and AXI OCMEM VBIF Access */
+	reg = venus_hfi_read_register(device, VENUS_VBIF_AXI_HALT_CTRL0);
+	reg |= VENUS_VBIF_AXI_HALT_CTRL0_HALT_REQ;
+	venus_hfi_write_register(device, VENUS_VBIF_AXI_HALT_CTRL0, reg, 0);
+
+	/* Request for AXI bus port halt */
+	rc = readl_poll_timeout((u32)device->hal_data->register_base_addr
+			+ VENUS_VBIF_AXI_HALT_CTRL1,
+			reg, reg & VENUS_VBIF_AXI_HALT_CTRL1_HALT_ACK,
+			POLL_INTERVAL_US,
+			VENUS_VBIF_AXI_HALT_ACK_TIMEOUT_US);
+	if (rc)
+		dprintk(VIDC_WARN, "AXI bus port halt timeout\n");
+	return rc;
+}
+
+static inline int venus_hfi_power_off(struct venus_hfi_device *device)
+{
+	int rc = 0;
+	if (!device) {
+		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
+		return -EINVAL;
+	}
+	if (!device->power_enabled) {
+		dprintk(VIDC_DBG, "Power already disabled");
+		goto already_disabled;
+	}
+
+	/*Temporarily enable clocks to make TZ call.*/
+	rc = venus_hfi_clk_enable(device);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to enable clocks before TZ call");
+		return rc;
+	}
+	rc = venus_hfi_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to suspend video core %d\n", rc);
+		venus_hfi_clk_disable(device);
+		return rc;
+	}
+	venus_hfi_clk_disable(device);
+	venus_hfi_iommu_detach(device);
+	rc = regulator_disable(device->gdsc);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to disable GDSC, %d", rc);
+		return rc;
+	}
+	if (device->res->has_ocmem)
+		venus_hfi_unvote_buses(device, DDR_MEM|OCMEM_MEM);
+	else
+		venus_hfi_unvote_buses(device, DDR_MEM);
+
+	device->power_enabled = 0;
+	--device->pwr_cnt;
+already_disabled:
+	return rc;
+}
+
+static inline int venus_hfi_power_on(struct venus_hfi_device *device)
+{
+	int rc = 0;
+	if (!device) {
+		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
+		return -EINVAL;
+	}
+
+	if (device->res->has_ocmem)
+		rc = venus_hfi_scale_buses(device, DDR_MEM|OCMEM_MEM);
+	else
+		rc = venus_hfi_scale_buses(device, DDR_MEM);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to scale buses");
+		goto err_scale_buses;
+	}
+
+	rc = regulator_enable(device->gdsc);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to enable GDSC %d", rc);
+		goto err_enable_gdsc;
+	}
+
+	rc = venus_hfi_iommu_attach(device);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to attach iommu after power on");
+		goto err_iommu_attach;
+	}
+
+	rc = venus_hfi_clk_enable(device);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to enable clocks");
+		goto err_enable_clk;
+	}
+
+	rc = venus_hfi_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to resume video core %d\n", rc);
+		goto err_set_video_state;
+	}
+	rc = venus_hfi_reset_core(device);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to reset venus core");
+		goto err_reset_core;
+	}
+	device->power_enabled = 1;
+	++device->pwr_cnt;
+	return rc;
+err_reset_core:
+	venus_hfi_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
+err_set_video_state:
+	venus_hfi_clk_disable(device);
+err_enable_clk:
+	venus_hfi_iommu_detach(device);
+err_iommu_attach:
+	regulator_disable(device->gdsc);
+err_enable_gdsc:
+	if (device->res->has_ocmem)
+		venus_hfi_unvote_buses(device, DDR_MEM|OCMEM_MEM);
+	else
+		venus_hfi_unvote_buses(device, DDR_MEM);
+err_scale_buses:
+	return rc;
+}
+
+static void venus_hfi_pm_hndlr(struct work_struct *work);
+static DECLARE_DELAYED_WORK(venus_hfi_pm_work, venus_hfi_pm_hndlr);
+
+static inline int venus_hfi_clk_gating_off(struct venus_hfi_device *device)
+{
+	int rc = 0;
+	if (!device) {
+		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
+		return -EINVAL;
+	}
+	if (device->clocks_enabled) {
+		dprintk(VIDC_DBG, "Clocks are already enabled");
+		goto already_enabled;
+	}
+	cancel_delayed_work(&venus_hfi_pm_work);
+	if (!device->power_enabled) {
+		/*This will enable clocks as well*/
+		rc = venus_hfi_power_on(device);
+		if (rc) {
+			dprintk(VIDC_ERR, "Failed venus power on");
+			goto fail_clk_power_on;
+		}
+	} else {
+		rc = venus_hfi_clk_enable(device);
+		if (rc) {
+			dprintk(VIDC_ERR, "Failed venus clock enable");
+			goto fail_clk_power_on;
+		}
+	        venus_hfi_write_register(device,
+			        VIDC_WRAPPER_INTR_MASK, VIDC_WRAPPER_INTR_MASK_A2HVCODEC_BMSK, 0);
+	}
+already_enabled:
+	device->clocks_enabled = 1;
+fail_clk_power_on:
 	return rc;
 }
 
@@ -569,7 +1076,7 @@ static int venus_hfi_scale_clocks(void *dev, int load)
 		dprintk(VIDC_ERR, "Invalid args: %p\n", device);
 		return -EINVAL;
 	}
-	device->load = load;
+	device->clk_load = load;
 	rc = clk_set_rate(device->resources.clock[VCODEC_CLK].clk,
 		venus_hfi_get_clock_rate(&device->resources.clock[VCODEC_CLK],
 			load));
@@ -595,30 +1102,32 @@ static int venus_hfi_iface_cmdq_write(struct venus_hfi_device *device,
 		dprintk(VIDC_ERR, "cannot write to shared Q's");
 		goto err_q_null;
 	}
-	mutex_lock(&device->clock_lock);
-	result = venus_hfi_clk_gating_off(device);
-	if (result) {
-		dprintk(VIDC_ERR, "%s : Clock enable failed\n",
-			__func__);
-		goto err_q_write;
-	}
-	result = venus_hfi_scale_clocks(device, device->load);
-	if (result) {
-		dprintk(VIDC_ERR, "Clock scaling failed\n");
-		goto err_q_write;
-	}
 	if (!venus_hfi_write_queue(q_info, (u8 *)pkt, &rx_req_is_set)) {
+		mutex_lock(&device->clk_pwr_lock);
+		result = venus_hfi_clk_gating_off(device);
+		if (result) {
+			dprintk(VIDC_ERR, "%s : Clock enable failed\n",
+					__func__);
+			mutex_unlock(&device->clk_pwr_lock);
+			goto err_q_write;
+		}
+		result = venus_hfi_scale_clocks(device, device->clk_load);
+		if (result) {
+			dprintk(VIDC_ERR, "Clock scaling failed\n");
+			mutex_unlock(&device->clk_pwr_lock);
+			goto err_q_write;
+		}
 		if (rx_req_is_set)
 			venus_hfi_write_register(
 				device,
 				VIDC_CPU_IC_SOFTINT,
 				1 << VIDC_CPU_IC_SOFTINT_H2A_SHFT, 0);
 		result = 0;
+		mutex_unlock(&device->clk_pwr_lock);
 	} else {
 		dprintk(VIDC_ERR, "venus_hfi_iface_cmdq_write:queue_full");
 	}
 err_q_write:
-	mutex_unlock(&device->clock_lock);
 err_q_null:
 	mutex_unlock(&device->write_lock);
 	return result;
@@ -642,26 +1151,27 @@ static int venus_hfi_iface_msgq_read(struct venus_hfi_device *device, void *pkt)
 		goto read_error_null;
 	}
 	q_info = &device->iface_queues[VIDC_IFACEQ_MSGQ_IDX];
-	mutex_lock(&device->clock_lock);
-	rc = venus_hfi_clk_gating_off(device);
-	if (rc) {
-		dprintk(VIDC_ERR,
-			"%s : Clock enable failed\n", __func__);
-		goto read_error;
-	}
 	if (!venus_hfi_read_queue(q_info, (u8 *)pkt, &tx_req_is_set)) {
+		mutex_lock(&device->clk_pwr_lock);
+		rc = venus_hfi_clk_gating_off(device);
+		if (rc) {
+			dprintk(VIDC_ERR,
+					"%s : Clock enable failed\n", __func__);
+			mutex_unlock(&device->clk_pwr_lock);
+			goto read_error;
+		}
 		if (tx_req_is_set)
 			venus_hfi_write_register(
 				device,
 				VIDC_CPU_IC_SOFTINT,
 				1 << VIDC_CPU_IC_SOFTINT_H2A_SHFT, 0);
 		rc = 0;
+		mutex_unlock(&device->clk_pwr_lock);
 	} else {
 		dprintk(VIDC_INFO, "venus_hfi_iface_msgq_read:queue_empty");
 		rc = -ENODATA;
 	}
 read_error:
-	mutex_unlock(&device->clock_lock);
 read_error_null:
 	mutex_unlock(&device->read_lock);
 	return rc;
@@ -684,27 +1194,28 @@ static int venus_hfi_iface_dbgq_read(struct venus_hfi_device *device, void *pkt)
 		rc = -ENODATA;
 		goto dbg_error_null;
 	}
-	mutex_lock(&device->clock_lock);
-	rc = venus_hfi_clk_gating_off(device);
-	if (rc) {
-		dprintk(VIDC_ERR,
-			"%s : Clock enable failed\n", __func__);
-		goto dbg_error;
-	}
 	q_info = &device->iface_queues[VIDC_IFACEQ_DBGQ_IDX];
 	if (!venus_hfi_read_queue(q_info, (u8 *)pkt, &tx_req_is_set)) {
+		mutex_lock(&device->clk_pwr_lock);
+		rc = venus_hfi_clk_gating_off(device);
+		if (rc) {
+			dprintk(VIDC_ERR,
+				"%s : Clock enable failed\n", __func__);
+			mutex_unlock(&device->clk_pwr_lock);
+			goto dbg_error;
+		}
 		if (tx_req_is_set)
 			venus_hfi_write_register(
 				device,
 				VIDC_CPU_IC_SOFTINT,
 				1 << VIDC_CPU_IC_SOFTINT_H2A_SHFT, 0);
 		rc = 0;
+		mutex_unlock(&device->clk_pwr_lock);
 	} else {
 		dprintk(VIDC_INFO, "venus_hfi_iface_dbgq_read:queue_empty");
 		rc = -ENODATA;
 	}
 dbg_error:
-	mutex_unlock(&device->clock_lock);
 dbg_error_null:
 	mutex_unlock(&device->read_lock);
 	return rc;
@@ -954,31 +1465,6 @@ fail_alloc_queue:
 	return -ENOMEM;
 }
 
-static int venus_hfi_core_start_cpu(struct venus_hfi_device *device)
-{
-	u32 ctrl_status = 0, count = 0, rc = 0;
-	int max_tries = 100;
-	venus_hfi_write_register(device,
-			VIDC_WRAPPER_INTR_MASK, 0x8, 0);
-	venus_hfi_write_register(device,
-			VIDC_CPU_CS_SCIACMDARG3, 1, 0);
-
-	while (!ctrl_status && count < max_tries) {
-		ctrl_status = venus_hfi_read_register(
-				device,
-				VIDC_CPU_CS_SCIACMDARG0);
-		if ((ctrl_status & 0xFE) == 0x4) {
-			dprintk(VIDC_ERR, "invalid setting for UC_REGION\n");
-			break;
-		}
-		usleep_range(500, 1000);
-		count++;
-	}
-	if (count >= max_tries)
-		rc = -ETIME;
-	return rc;
-}
-
 static void venus_hfi_set_registers(struct venus_hfi_device *device)
 {
 	struct reg_set *reg_set;
@@ -1045,6 +1531,7 @@ static int venus_hfi_core_init(void *device)
 	INIT_LIST_HEAD(&dev->sess_head);
 	mutex_init(&dev->read_lock);
 	mutex_init(&dev->write_lock);
+	mutex_init(&dev->session_lock);
 	venus_hfi_set_registers(dev);
 
 	if (!dev->hal_client) {
@@ -1110,12 +1597,12 @@ static int venus_hfi_core_release(void *device)
 		return -ENODEV;
 	}
 	if (dev->hal_client) {
-		mutex_lock(&dev->clock_lock);
+		mutex_lock(&dev->clk_pwr_lock);
 		rc = venus_hfi_clk_gating_off(device);
 		if (rc) {
 			dprintk(VIDC_ERR,
 				"%s : Clock enable failed\n", __func__);
-			mutex_unlock(&dev->clock_lock);
+			mutex_unlock(&dev->clk_pwr_lock);
 			return -EIO;
 		}
 		venus_hfi_write_register(dev,
@@ -1123,36 +1610,66 @@ static int venus_hfi_core_release(void *device)
 		if (!(dev->intr_status & VIDC_WRAPPER_INTR_STATUS_A2HWD_BMSK))
 			disable_irq_nosync(dev->hal_data->irq);
 		dev->intr_status = 0;
-		mutex_unlock(&dev->clock_lock);
+		mutex_unlock(&dev->clk_pwr_lock);
 	}
 	dprintk(VIDC_INFO, "HAL exited\n");
 	return 0;
 }
 
-int venus_hfi_core_pc_prep(void *device)
+static int venus_hfi_get_q_size(struct venus_hfi_device *dev,
+	unsigned int q_index)
 {
-	struct hfi_cmd_sys_pc_prep_packet pkt;
-	int rc = 0;
-	struct venus_hfi_device *dev;
+	struct hfi_queue_header *queue;
+	struct vidc_iface_q_info *q_info;
+	u32 write_ptr, read_ptr;
+	u32 rc = 0;
 
-	if (device) {
-		dev = device;
-	} else {
-		dprintk(VIDC_ERR, "invalid device");
-		return -ENODEV;
+	if (q_index >= VIDC_IFACEQ_NUMQ) {
+		dprintk(VIDC_ERR, "Invalid q index: %d\n", q_index);
+		return -ENOENT;
 	}
 
-	rc = create_pkt_cmd_sys_pc_prep(&pkt);
-	if (rc) {
-		dprintk(VIDC_ERR, "Failed to create sys pc prep pkt");
-		goto err_create_pkt;
+	q_info = &dev->iface_queues[q_index];
+	if (!q_info) {
+		dprintk(VIDC_ERR, "cannot read shared Q's\n");
+		return -ENOENT;
 	}
 
-	if (venus_hfi_iface_cmdq_write(dev, &pkt))
-		rc = -ENOTEMPTY;
-
-err_create_pkt:
+	queue = (struct hfi_queue_header *)q_info->q_hdr;
+	if (!queue) {
+		dprintk(VIDC_ERR, "queue not present");
+		return -ENOENT;
+	}
+	write_ptr = (u32)queue->qhdr_write_idx;
+	read_ptr = (u32)queue->qhdr_read_idx;
+	rc = read_ptr - write_ptr;
 	return rc;
+}
+
+static inline void venus_hfi_clk_gating_on(struct venus_hfi_device *device)
+{
+	if (!device) {
+		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
+		return;
+	}
+	if (!device->clocks_enabled) {
+		dprintk(VIDC_DBG, "Clocks are already disabled");
+		goto already_disabled;
+	}
+	/*SYS Idle should be last message so mask any further interrupts
+	 * until clocks are enabled again.*/
+	if (!venus_hfi_get_q_size(device, VIDC_IFACEQ_MSGQ_IDX)) {
+		venus_hfi_write_register(device,
+				VIDC_WRAPPER_INTR_MASK,
+				VIDC_WRAPPER_INTR_MASK_A2HVCODEC_BMSK |
+				VIDC_WRAPPER_INTR_MASK_A2HCPU_BMSK, 0);
+	}
+	venus_hfi_clk_disable(device);
+	if (!queue_delayed_work(device->venus_pm_workq, &venus_hfi_pm_work,
+			msecs_to_jiffies(msm_vidc_pwr_collapse_delay)))
+		dprintk(VIDC_DBG, "PM work already scheduled\n");
+already_disabled:
+	device->clocks_enabled = 0;
 }
 
 static void venus_hfi_core_clear_interrupt(struct venus_hfi_device *device)
@@ -1162,13 +1679,14 @@ static void venus_hfi_core_clear_interrupt(struct venus_hfi_device *device)
 
 	if (!device->callback)
 		return;
-	mutex_lock(&device->clock_lock);
+
+	mutex_lock(&device->write_lock);
+	mutex_lock(&device->clk_pwr_lock);
 	rc = venus_hfi_clk_gating_off(device);
 	if (rc) {
 		dprintk(VIDC_ERR,
 			"%s : Clock enable failed\n", __func__);
-		mutex_unlock(&device->clock_lock);
-		return;
+		goto err_clk_gating_off;
 	}
 	intr_status = venus_hfi_read_register(
 			device,
@@ -1191,8 +1709,10 @@ static void venus_hfi_core_clear_interrupt(struct venus_hfi_device *device)
 			VIDC_CPU_CS_A2HSOFTINTCLR, 1, 0);
 	venus_hfi_write_register(device,
 			VIDC_WRAPPER_INTR_CLEAR, intr_status, 0);
-	mutex_unlock(&device->clock_lock);
 	dprintk(VIDC_DBG, "Cleared WRAPPER/A2H interrupt");
+err_clk_gating_off:
+	mutex_unlock(&device->clk_pwr_lock);
+	mutex_unlock(&device->write_lock);
 }
 
 static int venus_hfi_core_set_resource(void *device,
@@ -1484,7 +2004,10 @@ static void *venus_hfi_session_init(void *device, u32 session_id,
 	else if (session_type == 2)
 		new_session->is_decoder = 1;
 	new_session->device = dev;
+
+	mutex_lock(&dev->session_lock);
 	list_add_tail(&new_session->list, &dev->sess_head);
+	mutex_unlock(&dev->session_lock);
 
 	if (create_pkt_cmd_sys_session_init(&pkt, (u32)new_session,
 			session_type, codec_type)) {
@@ -1554,7 +2077,11 @@ static int venus_hfi_session_clean(void *session)
 	sess_close = session;
 	dprintk(VIDC_DBG, "deleted the session: 0x%p",
 			sess_close);
+	mutex_lock(&((struct venus_hfi_device *)
+			sess_close->device)->session_lock);
 	list_del(&sess_close->list);
+	mutex_unlock(&((struct venus_hfi_device *)
+			sess_close->device)->session_lock);
 	kfree(sess_close);
 	return 0;
 }
@@ -1902,24 +2429,71 @@ static void venus_hfi_process_sys_watchdog_timeout(
 	device->callback(SYS_WATCHDOG_TIMEOUT, &cmd_done);
 }
 
-static int venus_hfi_is_cmd_pending(struct venus_hfi_device *dev)
+static int venus_hfi_core_pc_prep(void *device)
 {
-	struct hfi_queue_header *queue;
-	struct vidc_iface_q_info *q_info;
-	u32 write_ptr, read_ptr;
-	u32 rc = 0;
-	q_info = &dev->iface_queues[VIDC_IFACEQ_CMDQ_IDX];
-	if (!q_info)
-		dprintk(VIDC_ERR, "cannot read shared Q's");
-	queue = (struct hfi_queue_header *) q_info->q_hdr;
-	if (!queue) {
-		dprintk(VIDC_ERR, "queue not present");
-		return -ENOENT;
+	struct hfi_cmd_sys_pc_prep_packet pkt;
+	int rc = 0;
+	struct venus_hfi_device *dev;
+
+	if (device) {
+		dev = device;
+	} else {
+		dprintk(VIDC_ERR, "invalid device");
+		return -ENODEV;
 	}
-	write_ptr = (u32)queue->qhdr_write_idx;
-	read_ptr = (u32)queue->qhdr_read_idx;
-	rc = read_ptr - write_ptr;
+
+	rc = create_pkt_cmd_sys_pc_prep(&pkt);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to create sys pc prep pkt");
+		goto err_create_pkt;
+	}
+
+	if (venus_hfi_iface_cmdq_write(dev, &pkt))
+		rc = -ENOTEMPTY;
+
+err_create_pkt:
 	return rc;
+}
+
+
+static void venus_hfi_pm_hndlr(struct work_struct *work)
+{
+	int rc = 0;
+	struct venus_hfi_device *device = list_first_entry(
+			&hal_ctxt.dev_head, struct venus_hfi_device, list);
+	mutex_lock(&device->clk_pwr_lock);
+	if (device->clocks_enabled || !device->power_enabled) {
+		dprintk(VIDC_DBG,
+				"Clocks status: %d, Power status: %d, ignore power off\n",
+				device->clocks_enabled, device->power_enabled);
+		goto clks_enabled;
+	}
+	mutex_unlock(&device->clk_pwr_lock);
+	init_completion(&pc_prep_done);
+	rc = venus_hfi_core_pc_prep(device);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to prepare venus for power off");
+		return;
+	}
+	rc = wait_for_completion_timeout(&pc_prep_done,
+			msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
+	if (!rc) {
+		dprintk(VIDC_ERR, "Wait interrupted or timeout: %d", rc);
+		return;
+	}
+
+	mutex_lock(&device->clk_pwr_lock);
+	if (device->clocks_enabled) {
+		dprintk(VIDC_ERR,
+				"Clocks are still enabled after PC_PREP_DONE, ignore power off");
+		goto clks_enabled;
+	}
+
+	rc = venus_hfi_power_off(device);
+	if (rc)
+		dprintk(VIDC_ERR, "Failed venus power off");
+clks_enabled:
+	mutex_unlock(&device->clk_pwr_lock);
 }
 
 static int venus_hfi_try_clk_gating(struct venus_hfi_device *device)
@@ -1931,15 +2505,21 @@ static int venus_hfi_try_clk_gating(struct venus_hfi_device *device)
 		return -ENODEV;
 	}
 	mutex_lock(&device->write_lock);
-	mutex_lock(&device->clock_lock);
-	rc = venus_hfi_is_cmd_pending(device);
+	mutex_lock(&device->clk_pwr_lock);
+	rc = venus_hfi_get_q_size(device, VIDC_IFACEQ_CMDQ_IDX);
 	ctrl_status = venus_hfi_read_register(
 		device,
 		VIDC_CPU_CS_SCIACMDARG0);
+	dprintk(VIDC_DBG,
+			"venus_hfi_try_clk_gating - rc %d, ctrl_status 0x%x",
+			rc, ctrl_status);
 	if (((ctrl_status & VIDC_CPU_CS_SCIACMDARG0_HFI_CTRL_INIT_IDLE_MSG_BMSK)
-		!= 0) && !rc)
+		|| (ctrl_status & VIDC_CPU_CS_SCIACMDARG0_HFI_CTRL_PC_READY))
+			&& !rc)
 		venus_hfi_clk_gating_on(device);
-	mutex_unlock(&device->clock_lock);
+	else
+		dprintk(VIDC_DBG, "Ignore clock gating");
+	mutex_unlock(&device->clk_pwr_lock);
 	mutex_unlock(&device->write_lock);
 	return rc;
 }
@@ -1985,7 +2565,8 @@ static void venus_hfi_response_handler(struct venus_hfi_device *device)
 		while (!venus_hfi_iface_msgq_read(device, packet)) {
 			rc = hfi_process_msg_packet(device->callback,
 				device->device_id,
-				(struct vidc_hal_msg_pkt_hdr *) packet);
+				(struct vidc_hal_msg_pkt_hdr *) packet,
+				&device->sess_head, &device->session_lock);
 			if (rc == HFI_MSG_EVENT_NOTIFY)
 				venus_hfi_process_msg_event_notify(
 					device, (void *)packet);
@@ -1995,8 +2576,18 @@ static void venus_hfi_response_handler(struct venus_hfi_device *device)
 				(struct hfi_msg_sys_debug_packet *) packet;
 			dprintk(VIDC_FW, "FW-SAYS: %s", pkt->rg_msg_data);
 		}
-		if (rc == HFI_MSG_SYS_IDLE)
+		if (rc == HFI_MSG_SYS_IDLE) {
+			dprintk(VIDC_DBG, "Received HFI_MSG_SYS_IDLE\n");
 			rc = venus_hfi_try_clk_gating(device);
+		} else if (rc == HFI_MSG_SYS_PC_PREP_DONE) {
+			dprintk(VIDC_DBG,
+					"Received HFI_MSG_SYS_PC_PREP_DONE\n");
+			rc = venus_hfi_try_clk_gating(device);
+			if (rc)
+				dprintk(VIDC_ERR,
+					"Failed clk gating after PC_PREP_DONE");
+			complete(&pc_prep_done);
+		}
 	} else {
 		dprintk(VIDC_ERR, "SPURIOUS_INTERRUPT");
 	}
@@ -2177,15 +2768,20 @@ static inline void venus_hfi_disable_clks(struct venus_hfi_device *device)
 		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
 		return;
 	}
+	mutex_lock(&device->clk_pwr_lock);
 	if (device->clocks_enabled) {
 		for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
+			if (i == VCODEC_OCMEM_CLK && !device->res->has_ocmem)
+				continue;
 			cl = &device->resources.clock[i];
+			usleep(100);
 			clk_disable(cl->clk);
 		}
 	} else {
 		for (i = device->clk_gating_level + 1;
 			i < VCODEC_MAX_CLKS; i++) {
 			cl = &device->resources.clock[i];
+			usleep(100);
 			clk_disable(cl->clk);
 		}
 	}
@@ -2196,6 +2792,8 @@ static inline void venus_hfi_disable_clks(struct venus_hfi_device *device)
 		clk_unprepare(cl->clk);
 	}
 	device->clocks_enabled = 0;
+	--device->clk_cnt;
+	mutex_unlock(&device->clk_pwr_lock);
 }
 static inline int venus_hfi_enable_clks(struct venus_hfi_device *device)
 {
@@ -2206,7 +2804,7 @@ static inline int venus_hfi_enable_clks(struct venus_hfi_device *device)
 		dprintk(VIDC_ERR, "Invalid params: %p\n", device);
 		return -EINVAL;
 	}
-
+	mutex_lock(&device->clk_pwr_lock);
 	for (i = VCODEC_CLK; i < VCODEC_MAX_CLKS; i++) {
 		if (i == VCODEC_OCMEM_CLK && !device->res->has_ocmem)
 			continue;
@@ -2220,12 +2818,16 @@ static inline int venus_hfi_enable_clks(struct venus_hfi_device *device)
 		}
 	}
 	device->clocks_enabled = 1;
+	++device->clk_cnt;
+	mutex_unlock(&device->clk_pwr_lock);
 	return rc;
 fail_clk_enable:
 	for (; i >= 0; i--) {
 		cl = &device->resources.clock[i];
+		usleep(100);
 		clk_disable_unprepare(cl->clk);
 	}
+	mutex_unlock(&device->clk_pwr_lock);
 	return rc;
 }
 static int venus_hfi_register_iommu_domains(struct venus_hfi_device *device,
@@ -2371,118 +2973,6 @@ err_init_bus:
 	return -EINVAL;
 }
 
-
-static const u32 venus_hfi_bus_table[] = {
-	36000,
-	110400,
-	244800,
-	489000,
-	783360,
-	979200,
-};
-
-static int venus_hfi_get_bus_vector(struct venus_hfi_device *device, int load,
-			enum session_type type, enum mem_type mtype)
-{
-	int num_rows = sizeof(venus_hfi_bus_table)/(sizeof(u32));
-	int i, j;
-	int idx = 0;
-
-	if (!device || (mtype != DDR_MEM && mtype != OCMEM_MEM) ||
-		(type != MSM_VIDC_ENCODER && type != MSM_VIDC_DECODER)) {
-		dprintk(VIDC_ERR, "%s invalid params", __func__);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < num_rows; i++) {
-		if (load <= venus_hfi_bus_table[i])
-			break;
-	}
-
-	if (type == MSM_VIDC_ENCODER)
-		idx = (mtype == DDR_MEM) ? BUS_IDX_ENC_DDR : BUS_IDX_ENC_OCMEM;
-	else
-		idx = (mtype == DDR_MEM) ? BUS_IDX_DEC_DDR : BUS_IDX_DEC_OCMEM;
-
-	j = clamp(i, 0, num_rows-1) + 1;
-
-	/* Ensure bus index remains within the supported range,
-	* as specified in the device dtsi file */
-	j = clamp(j, 0, device->res->bus_pdata[idx].num_usecases - 1);
-
-	dprintk(VIDC_DBG, "Required bus = %d\n", j);
-	return j;
-}
-
-static int venus_hfi_scale_bus(void *dev, int load,
-				enum session_type type, enum mem_type mtype)
-{
-	int rc = 0;
-	u32 handle = 0;
-	struct venus_hfi_device *device = dev;
-	int bus_vector = 0;
-
-	if (!device) {
-		dprintk(VIDC_ERR, "%s invalid device handle %p",
-			__func__, device);
-		return -EINVAL;
-	}
-
-	if (mtype & DDR_MEM)
-		handle = device->resources.bus_info.ddr_handle[type];
-	if (mtype & OCMEM_MEM)
-		handle = device->resources.bus_info.ocmem_handle[type];
-
-	if (handle) {
-		bus_vector = venus_hfi_get_bus_vector(device, load,
-				type, mtype);
-		if (bus_vector < 0) {
-			dprintk(VIDC_ERR, "Failed to get bus vector\n");
-			return -EINVAL;
-		}
-		rc = msm_bus_scale_client_update_request(handle, bus_vector);
-		if (rc)
-			dprintk(VIDC_ERR, "Failed to scale bus: %d\n", rc);
-	} else {
-		dprintk(VIDC_ERR, "Failed to scale bus, mtype: %d\n",
-				mtype);
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-
-static int venus_hfi_unvote_bus(void *dev,
-				enum session_type type, enum mem_type mtype)
-{
-	int rc = 0;
-	u32 handle = 0;
-	struct venus_hfi_device *device = dev;
-
-	if (!device) {
-		dprintk(VIDC_ERR, "%s invalid device handle %p",
-			__func__, device);
-		return -EINVAL;
-	}
-
-	if (mtype & DDR_MEM)
-		handle = device->resources.bus_info.ddr_handle[type];
-	if (mtype & OCMEM_MEM)
-		handle = device->resources.bus_info.ocmem_handle[type];
-
-	if (handle) {
-		rc = msm_bus_scale_client_update_request(
-				handle, 0);
-		if (rc)
-			dprintk(VIDC_ERR, "Failed to unvote bus: %d\n", rc);
-	} else {
-		dprintk(VIDC_ERR, "Failed to unvote bus, mtype: %d\n",
-				mtype);
-		rc = -EINVAL;
-	}
-	return rc;
-}
-
 static int venus_hfi_set_ocmem(void *dev, struct ocmem_buf *ocmem)
 {
 	struct vidc_resource_hdr rhdr;
@@ -2572,9 +3062,10 @@ static void venus_hfi_ocmem_init(struct venus_hfi_device *device)
 	ocmem->vidc_ocmem_nb.notifier_call = venus_hfi_ocmem_notify_handler;
 	ocmem->handle =
 		ocmem_notifier_register(OCMEM_VIDEO, &ocmem->vidc_ocmem_nb);
-	if (!ocmem->handle) {
-		dprintk(VIDC_WARN, "Failed to register OCMEM notifier.");
-		dprintk(VIDC_INFO, " Performance will be impacted\n");
+	if (IS_ERR_OR_NULL(ocmem->handle)) {
+		dprintk(VIDC_WARN,
+				"Failed to register OCMEM notifier. Performance might be impacted\n");
+		ocmem->handle = NULL;
 	}
 }
 
@@ -2648,6 +3139,15 @@ static int venus_hfi_init_resources(struct venus_hfi_device *device,
 	int rc = 0;
 
 	device->res = res;
+	if (!res) {
+		dprintk(VIDC_ERR, "Invalid params: %p\n", res);
+		return -ENODEV;
+	}
+	device->gdsc = devm_regulator_get(&res->pdev->dev, "vdd");
+	if (IS_ERR(device->gdsc)) {
+		dprintk(VIDC_ERR, "Failed to get Venus GDSC\n");
+		return -ENODEV;
+	}
 	rc = venus_hfi_init_clocks(res, device);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to init clocks\n");
@@ -2677,6 +3177,7 @@ err_register_iommu_domain:
 err_init_bus:
 	venus_hfi_deinit_clocks(device);
 err_init_clocks:
+	device->gdsc = NULL;
 	return rc;
 }
 
@@ -2687,72 +3188,7 @@ static void venus_hfi_deinit_resources(struct venus_hfi_device *device)
 	venus_hfi_deregister_iommu_domains(device);
 	venus_hfi_deinit_bus(device);
 	venus_hfi_deinit_clocks(device);
-}
-
-static int venus_hfi_iommu_attach(struct venus_hfi_device *device)
-{
-	int rc = 0;
-	struct iommu_domain *domain;
-	int i;
-	struct iommu_set *iommu_group_set;
-	struct iommu_group *group;
-	struct iommu_info *iommu_map;
-
-	if (!device || !device->res)
-		return -EINVAL;
-
-	iommu_group_set = &device->res->iommu_group_set;
-	for (i = 0; i < iommu_group_set->count; i++) {
-		iommu_map = &iommu_group_set->iommu_maps[i];
-		group = iommu_map->group;
-		domain = msm_get_iommu_domain(iommu_map->domain);
-		if (IS_ERR_OR_NULL(domain)) {
-			dprintk(VIDC_ERR,
-				"Failed to get domain: %s\n", iommu_map->name);
-			rc = PTR_ERR(domain);
-			break;
-		}
-		rc = iommu_attach_group(domain, group);
-		if (rc) {
-			dprintk(VIDC_ERR,
-				"IOMMU attach failed: %s\n", iommu_map->name);
-			break;
-		}
-	}
-	if (i < iommu_group_set->count) {
-		i--;
-		for (; i >= 0; i--) {
-			iommu_map = &iommu_group_set->iommu_maps[i];
-			group = iommu_map->group;
-			domain = msm_get_iommu_domain(iommu_map->domain);
-			if (group && domain)
-				iommu_detach_group(domain, group);
-		}
-	}
-	return rc;
-}
-
-static void venus_hfi_iommu_detach(struct venus_hfi_device *device)
-{
-	struct iommu_group *group;
-	struct iommu_domain *domain;
-	struct iommu_set *iommu_group_set;
-	struct iommu_info *iommu_map;
-	int i;
-
-	if (!device || !device->res) {
-		dprintk(VIDC_ERR, "Invalid paramter: %p\n", device);
-		return;
-	}
-
-	iommu_group_set = &device->res->iommu_group_set;
-	for (i = 0; i < iommu_group_set->count; i++) {
-		iommu_map = &iommu_group_set->iommu_maps[i];
-		group = iommu_map->group;
-		domain = msm_get_iommu_domain(iommu_map->domain);
-		if (group && domain)
-			iommu_detach_group(domain, group);
-	}
+	device->gdsc = NULL;
 }
 
 static int venus_hfi_iommu_get_domain_partition(void *dev, u32 flags,
@@ -2821,12 +3257,12 @@ static int venus_hfi_load_fw(void *dev)
 	int rc = 0;
 	struct venus_hfi_device *device = dev;
 
-	if (!device) {
+	if (!device || !device->gdsc) {
 		dprintk(VIDC_ERR, "%s Invalid paramter: %p\n",
 			__func__, device);
 		return -EINVAL;
 	}
-	mutex_init(&device->clock_lock);
+	mutex_init(&device->clk_pwr_lock);
 	device->clk_gating_level = VCODEC_CLK;
 	rc = venus_hfi_iommu_attach(device);
 	if (rc) {
@@ -2834,14 +3270,26 @@ static int venus_hfi_load_fw(void *dev)
 		goto fail_iommu_attach;
 	}
 
-	if (!device->resources.fw.cookie)
+	mutex_lock(&device->clk_pwr_lock);
+	if (!device->resources.fw.cookie) {
+		rc = regulator_enable(device->gdsc);
+		if (rc) {
+			dprintk(VIDC_ERR, "Failed to enable GDSC %d", rc);
+			mutex_unlock(&device->clk_pwr_lock);
+			goto fail_enable_gdsc;
+		}
 		device->resources.fw.cookie = subsystem_get("venus");
+	}
 
 	if (IS_ERR_OR_NULL(device->resources.fw.cookie)) {
 		dprintk(VIDC_ERR, "Failed to download firmware\n");
 		rc = -ENOMEM;
+		mutex_unlock(&device->clk_pwr_lock);
 		goto fail_load_fw;
 	}
+	device->power_enabled = 1;
+	++device->pwr_cnt;
+	mutex_unlock(&device->clk_pwr_lock);
 	/*Clocks can be enabled only after pil_get since
 	 * gdsc is turned-on in pil_get*/
 	rc = venus_hfi_enable_clks(device);
@@ -2862,7 +3310,13 @@ fail_protect_mem:
 fail_enable_clks:
 	subsystem_put(device->resources.fw.cookie);
 fail_load_fw:
+	mutex_lock(&device->clk_pwr_lock);
 	device->resources.fw.cookie = NULL;
+	regulator_disable(device->gdsc);
+	device->power_enabled = 0;
+	--device->pwr_cnt;
+	mutex_unlock(&device->clk_pwr_lock);
+fail_enable_gdsc:
 	venus_hfi_iommu_detach(device);
 fail_iommu_attach:
 	return rc;
@@ -2878,10 +3332,22 @@ static void venus_hfi_unload_fw(void *dev)
 	}
 	if (device->resources.fw.cookie) {
 		flush_workqueue(device->vidc_workq);
-		venus_hfi_disable_clks(device);
+		flush_workqueue(device->venus_pm_workq);
 		subsystem_put(device->resources.fw.cookie);
 		venus_hfi_interface_queues_release(dev);
+		/* IOMMU operations need to be done before AXI halt.*/
 		venus_hfi_iommu_detach(device);
+		/* Halt the AXI to make sure there are no pending transactions.
+		 * Clocks should be unprepared after making sure axi is halted.
+		 */
+		if(venus_hfi_halt_axi(device))
+			dprintk(VIDC_WARN, "Failed to halt AXI\n");
+		venus_hfi_disable_clks(device);
+		mutex_lock(&device->clk_pwr_lock);
+		regulator_disable(device->gdsc);
+		device->power_enabled = 0;
+		--device->pwr_cnt;
+		mutex_unlock(&device->clk_pwr_lock);
 		device->resources.fw.cookie = NULL;
 	}
 }
@@ -2917,6 +3383,37 @@ static int venus_hfi_get_fw_info(void *dev, enum fw_info info)
 	default:
 		dprintk(VIDC_ERR, "Invalid fw info requested");
 	}
+	return rc;
+}
+
+static int venus_hfi_get_info(void *dev, enum dev_info info)
+{
+	int rc = 0;
+	struct venus_hfi_device *device = dev;
+	if (!device) {
+		dprintk(VIDC_ERR, "%s Invalid parameter: %p\n",
+				__func__, device);
+		return -EINVAL;
+	}
+
+	mutex_lock(&device->clk_pwr_lock);
+	switch (info) {
+	case DEV_CLOCK_COUNT:
+		rc = device->clk_cnt;
+		break;
+	case DEV_CLOCK_ENABLED:
+		rc = device->clocks_enabled;
+		break;
+	case DEV_PWR_COUNT:
+		rc = device->pwr_cnt;
+		break;
+	case DEV_PWR_ENABLED:
+		rc = device->power_enabled;
+		break;
+	default:
+		dprintk(VIDC_ERR, "Invalid device info requested");
+	}
+	mutex_unlock(&device->clk_pwr_lock);
 	return rc;
 }
 
@@ -2976,12 +3473,22 @@ static void *venus_hfi_add_device(u32 device_id,
 
 	hdevice->device_id = device_id;
 	hdevice->callback = callback;
+	hdevice->clocks_enabled = 0;
+	hdevice->clk_cnt = 0;
+	hdevice->power_enabled = 0;
+	hdevice->pwr_cnt = 0;
 
 	hdevice->vidc_workq = create_singlethread_workqueue(
 		"msm_vidc_workerq_venus");
 	if (!hdevice->vidc_workq) {
-		dprintk(VIDC_ERR, ": create workq failed\n");
+		dprintk(VIDC_ERR, ": create vidc workq failed\n");
 		goto error_createq;
+	}
+	hdevice->venus_pm_workq = create_singlethread_workqueue(
+			"pm_workerq_venus");
+	if (!hdevice->venus_pm_workq) {
+		dprintk(VIDC_ERR, ": create pm workq failed\n");
+		goto error_createq_pm;
 	}
 
 	if (hal_ctxt.dev_count == 0)
@@ -2992,6 +3499,8 @@ static void *venus_hfi_add_device(u32 device_id,
 	hal_ctxt.dev_count++;
 
 	return (void *) hdevice;
+error_createq_pm:
+	destroy_workqueue(hdevice->vidc_workq);
 error_createq:
 err_init_regs:
 	kfree(hdevice);
@@ -3042,6 +3551,7 @@ void venus_hfi_delete_device(void *device)
 				free_irq(dev->hal_data->irq, close);
 				list_del(&close->list);
 				destroy_workqueue(close->vidc_workq);
+				destroy_workqueue(close->venus_pm_workq);
 				kfree(close->hal_data);
 				kfree(close);
 				break;
@@ -3088,6 +3598,7 @@ static void venus_init_hfi_callbacks(struct hfi_device *hdev)
 	hdev->load_fw = venus_hfi_load_fw;
 	hdev->unload_fw = venus_hfi_unload_fw;
 	hdev->get_fw_info = venus_hfi_get_fw_info;
+	hdev->get_info = venus_hfi_get_info;
 	hdev->get_stride_scanline = venus_hfi_get_stride_scanline;
 	hdev->capability_check = venus_hfi_capability_check;
 }

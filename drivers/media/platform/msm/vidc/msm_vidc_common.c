@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,8 +21,6 @@
 #include "vidc_hfi_api.h"
 #include "msm_smem.h"
 #include "msm_vidc_debug.h"
-
-#define HW_RESPONSE_TIMEOUT 1000
 
 #define IS_ALREADY_IN_STATE(__p, __d) ({\
 	int __rc = (__p >= __d);\
@@ -364,7 +362,7 @@ static int wait_for_sess_signal_receipt(struct msm_vidc_inst *inst,
 	int rc = 0;
 	rc = wait_for_completion_timeout(
 		&inst->completions[SESSION_MSG_INDEX(cmd)],
-		msecs_to_jiffies(HW_RESPONSE_TIMEOUT));
+		msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
 	if (!rc) {
 		dprintk(VIDC_ERR, "Wait interrupted or timeout: %d\n", rc);
 		msm_comm_recover_from_session_error(inst);
@@ -487,6 +485,14 @@ static void handle_event_change(enum command_response cmd, void *data)
 					__func__, inst,
 					event_notify->packet_buffer,
 					event_notify->exra_data_buffer);
+
+				if (inst->state == MSM_VIDC_CORE_INVALID ||
+					inst->core->state ==
+						VIDC_CORE_INVALID) {
+					dprintk(VIDC_DBG,
+						"Event release buf ref received in invalid state - discard\n");
+					return;
+				}
 
 				/*
 				* Get the buffer_info entry for the
@@ -1291,7 +1297,7 @@ static int msm_comm_unset_ocmem(struct msm_vidc_core *core)
 	}
 	rc = wait_for_completion_timeout(
 		&core->completions[SYS_MSG_INDEX(RELEASE_RESOURCE_DONE)],
-		msecs_to_jiffies(HW_RESPONSE_TIMEOUT));
+		msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
 	if (!rc) {
 		dprintk(VIDC_ERR, "Wait interrupted or timeout: %d\n", rc);
 		rc = -EIO;
@@ -1313,7 +1319,7 @@ static int msm_comm_init_core_done(struct msm_vidc_inst *inst)
 	dprintk(VIDC_DBG, "Waiting for SYS_INIT_DONE\n");
 	rc = wait_for_completion_timeout(
 		&core->completions[SYS_MSG_INDEX(SYS_INIT_DONE)],
-		msecs_to_jiffies(HW_RESPONSE_TIMEOUT));
+		msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
 	if (!rc) {
 		dprintk(VIDC_ERR, "Wait interrupted or timeout: %d\n", rc);
 		rc = -EIO;
@@ -2278,7 +2284,7 @@ int msm_comm_try_get_bufreqs(struct msm_vidc_inst *inst)
 	}
 	rc = wait_for_completion_timeout(
 		&inst->completions[SESSION_MSG_INDEX(SESSION_PROPERTY_INFO)],
-		msecs_to_jiffies(HW_RESPONSE_TIMEOUT));
+		msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
 	if (!rc) {
 		dprintk(VIDC_ERR,
 			"Wait interrupted or timeout: %d\n", rc);
@@ -2611,9 +2617,6 @@ void msm_comm_flush_dynamic_buffers(struct msm_vidc_inst *inst)
 				dprintk(VIDC_DBG,
 					"released buffer held in driver before issuing flush: 0x%x fd[0]: %d\n",
 					binfo->device_addr[0], binfo->fd[0]);
-				/*delete this buffer info from registered list*/
-				list_del(&binfo->list);
-				kfree(binfo);
 				/*send event to client*/
 				v4l2_event_queue_fh(&inst->event_handler,
 					&buf_event);
@@ -2659,6 +2662,9 @@ int msm_comm_flush(struct msm_vidc_inst *inst, u32 flags)
 		dprintk(VIDC_INFO, "Input only flush not supported\n");
 		return 0;
 	}
+	mutex_lock(&inst->sync_lock);
+	msm_comm_flush_dynamic_buffers(inst);
+	mutex_unlock(&inst->sync_lock);
 	if (inst->state == MSM_VIDC_CORE_INVALID ||
 			core->state == VIDC_CORE_INVALID) {
 		dprintk(VIDC_ERR,
@@ -2934,7 +2940,7 @@ int msm_comm_recover_from_session_error(struct msm_vidc_inst *inst)
 	}
 	rc = wait_for_completion_timeout(
 		&inst->completions[SESSION_MSG_INDEX(SESSION_ABORT_DONE)],
-		msecs_to_jiffies(HW_RESPONSE_TIMEOUT));
+		msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
 	if (!rc) {
 		dprintk(VIDC_ERR, "%s: Wait interrupted or timeout: %d\n",
 			__func__, rc);

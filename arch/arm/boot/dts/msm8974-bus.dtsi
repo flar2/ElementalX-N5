@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1178,7 +1178,7 @@
 			qcom,thresh = <2000000>;
 			qcom,dual-conf;
 			qcom,bimc,bw = <300000>;
-			qcom,bimc,gp = <5>;
+			qcom,bimc,gp = <5000>;
 			qcom,bimc,thmp = <50>;
 		};
 
@@ -1198,7 +1198,7 @@
 			qcom,thresh = <2000000>;
 			qcom,dual-conf;
 			qcom,bimc,bw = <300000>;
-			qcom,bimc,gp = <5>;
+			qcom,bimc,gp = <5000>;
 			qcom,bimc,thmp = <50>;
 		};
 

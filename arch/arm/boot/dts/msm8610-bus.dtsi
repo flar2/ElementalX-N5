@@ -906,9 +906,15 @@
 			qcom,qport = <0>;
 			qcom,ws = <10000>;
 			qcom,mas-hw-id = <0>;
-			qcom,prio-rd = <1>;
-			qcom,prio-wr = <1>;
-			qcom,prio-lvl = <1>;
+			qcom,prio-rd = <0>;
+			qcom,prio-wr = <0>;
+			qcom,prio-lvl = <0>;
+			qcom,mode-thresh = "Fixed";
+			qcom,thresh = <800000>;
+			qcom,dual-conf;
+			qcom,bimc,bw = <300000>;
+			qcom,bimc,gp = <5000>;
+			qcom,bimc,thmp = <50>;
 		};
 
 		mas-mss-proc {

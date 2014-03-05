@@ -79,7 +79,8 @@ static int mmc_queue_thread(void *d)
 				continue; /* fetch again */
 			} else if ((mq->flags & MMC_QUEUE_URGENT_REQUEST) &&
 				   (mq->mqrq_cur->req &&
-				!(mq->mqrq_cur->req->cmd_flags & REQ_URGENT))) {
+				!(mq->mqrq_cur->req->cmd_flags &
+				       MMC_REQ_NOREINSERT_MASK))) {
 				/*
 				 * clean current request when urgent request
 				 * processing in progress and current request is
@@ -264,7 +265,7 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 
 	if ((host->caps2 & MMC_CAP2_STOP_REQUEST) &&
 			host->ops->stop_request &&
-			mq->card->ext_csd.hpi)
+			mq->card->ext_csd.hpi_en)
 		blk_urgent_request(mq->queue, mmc_urgent_request);
 
 	memset(&mq->mqrq_cur, 0, sizeof(mq->mqrq_cur));
@@ -285,7 +286,9 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 	if (mmc_can_erase(card))
 		mmc_queue_setup_discard(mq->queue, card);
 
-	if ((mmc_can_sanitize(card) && (host->caps2 & MMC_CAP2_SANITIZE)))
+	/* Don't enable Sanitize if HPI is not supported */
+	if ((mmc_can_sanitize(card) && (host->caps2 & MMC_CAP2_SANITIZE) &&
+	    card->ext_csd.hpi_en))
 		mmc_queue_setup_sanitize(mq->queue);
 
 #ifdef CONFIG_MMC_BLOCK_BOUNCE

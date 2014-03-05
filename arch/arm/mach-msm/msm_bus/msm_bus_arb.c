@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -297,6 +297,21 @@ static int getpath(int src, int dest)
 	return CREATE_PNODE_ID(src, pnode_num);
 }
 
+static uint64_t get_node_maxib(struct msm_bus_inode_info *info)
+{
+	int i, ctx;
+	uint64_t maxib = 0;
+
+	for (i = 0; i <= info->num_pnodes; i++) {
+		for (ctx = 0; ctx < NUM_CTX; ctx++)
+			maxib = max(info->pnode[i].clk[ctx], maxib);
+	}
+
+	MSM_BUS_DBG("%s: Node %d numpnodes %d maxib %llu", __func__,
+		info->num_pnodes, info->node_info->id, maxib);
+	return maxib;
+}
+
 /**
  * update_path() - Update the path with the bandwidth and clock values, as
  * requested by the client.
@@ -344,15 +359,6 @@ static int update_path(int curr, int pnode, uint64_t req_clk, uint64_t req_bw,
 		return -ENXIO;
 	}
 
-	/**
-	 * If master supports dual configuration, check if
-	 * the configuration needs to be changed based on
-	 * incoming requests
-	 */
-	if (info->node_info->dual_conf)
-		fabdev->algo->config_master(fabdev, info,
-			req_clk, req_bw);
-
 	info->link_info.sel_bw = &info->link_info.bw[ctx];
 	info->link_info.sel_clk = &info->link_info.clk[ctx];
 	*info->link_info.sel_bw += add_bw;
@@ -366,6 +372,19 @@ static int update_path(int curr, int pnode, uint64_t req_clk, uint64_t req_bw,
 	info->pnode[index].sel_clk = &info->pnode[index].clk[ctx &
 		cl_active_flag];
 	*info->pnode[index].sel_bw += add_bw;
+	*info->pnode[index].sel_clk = req_clk;
+
+	/**
+	 * If master supports dual configuration, check if
+	 * the configuration needs to be changed based on
+	 * incoming requests
+	 */
+	if (info->node_info->dual_conf) {
+		uint64_t node_maxib = 0;
+		node_maxib = get_node_maxib(info);
+		fabdev->algo->config_master(fabdev, info,
+			node_maxib, req_bw);
+	}
 
 	info->link_info.num_tiers = info->node_info->num_tiers;
 	info->link_info.tier = info->node_info->tier;
@@ -652,15 +671,6 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 			MSM_BUS_DBG("ab: %llu ib: %llu\n", curr_bw, curr_clk);
 		}
 
-		if (index == 0) {
-			/* This check protects the bus driver from clients
-			 * that can leave non-zero requests after
-			 * unregistering.
-			 * */
-			req_clk = 0;
-			req_bw = 0;
-		}
-
 		if (!pdata->active_only) {
 			ret = update_path(src, pnode, req_clk, req_bw,
 				curr_clk, curr_bw, 0, pdata->active_only);
@@ -782,11 +792,47 @@ void msm_bus_scale_client_reset_pnodes(uint32_t cl)
  */
 void msm_bus_scale_unregister_client(uint32_t cl)
 {
+	int i;
 	struct msm_bus_client *client = (struct msm_bus_client *)(cl);
+	bool warn = false;
 	if (IS_ERR_OR_NULL(client))
 		return;
-	if (client->curr != 0)
+
+	for (i = 0; i < client->pdata->usecase->num_paths; i++) {
+		if ((client->pdata->usecase[0].vectors[i].ab) ||
+			(client->pdata->usecase[0].vectors[i].ib)) {
+			warn = true;
+			break;
+		}
+	}
+
+	if (warn) {
+		int num_paths = client->pdata->usecase->num_paths;
+		int ab[num_paths], ib[num_paths];
+		WARN(1, "%s called unregister with non-zero vectors\n",
+			client->pdata->name);
+
+		/*
+		 * Save client values and zero them out to
+		 * cleanly unregister
+		 */
+		for (i = 0; i < num_paths; i++) {
+			ab[i] = client->pdata->usecase[0].vectors[i].ab;
+			ib[i] = client->pdata->usecase[0].vectors[i].ib;
+			client->pdata->usecase[0].vectors[i].ab = 0;
+			client->pdata->usecase[0].vectors[i].ib = 0;
+		}
+
 		msm_bus_scale_client_update_request(cl, 0);
+
+		/* Restore client vectors if required for re-registering. */
+		for (i = 0; i < num_paths; i++) {
+			client->pdata->usecase[0].vectors[i].ab = ab[i];
+			client->pdata->usecase[0].vectors[i].ib = ib[i];
+		}
+	} else if (client->curr != 0)
+		msm_bus_scale_client_update_request(cl, 0);
+
 	MSM_BUS_DBG("Unregistering client %d\n", cl);
 	mutex_lock(&msm_bus_lock);
 	msm_bus_scale_client_reset_pnodes(cl);

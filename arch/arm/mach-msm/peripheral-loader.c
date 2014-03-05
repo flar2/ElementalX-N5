@@ -30,6 +30,7 @@
 #include <linux/list_sort.h>
 #include <linux/idr.h>
 #include <linux/interrupt.h>
+#include <linux/of_gpio.h>
 
 #include <asm/uaccess.h>
 #include <asm/setup.h>
@@ -113,6 +114,7 @@ struct pil_image_info {
  * @region_end: address where relocatable region ends or highest address for
  * non-relocatable images
  * @region: region allocated for relocatable images
+ * @unvoted_flag: flag to keep track if we have unvoted or not.
  *
  * This struct contains data for a pil_desc that should not be exposed outside
  * of this file. This structure points to the descriptor and the descriptor
@@ -132,6 +134,7 @@ struct pil_priv {
 	struct ion_handle *region;
 	struct pil_image_info __iomem *info;
 	int id;
+	int unvoted_flag;
 };
 
 /**
@@ -184,15 +187,21 @@ phys_addr_t pil_get_entry_addr(struct pil_desc *desc)
 }
 EXPORT_SYMBOL(pil_get_entry_addr);
 
-static void pil_proxy_work(struct work_struct *work)
+static void __pil_proxy_unvote(struct pil_priv *priv)
 {
-	struct delayed_work *delayed = to_delayed_work(work);
-	struct pil_priv *priv = container_of(delayed, struct pil_priv, proxy);
 	struct pil_desc *desc = priv->desc;
 
 	desc->ops->proxy_unvote(desc);
 	wake_unlock(&priv->wlock);
 	module_put(desc->owner);
+
+}
+
+static void pil_proxy_unvote_work(struct work_struct *work)
+{
+	struct delayed_work *delayed = to_delayed_work(work);
+	struct pil_priv *priv = container_of(delayed, struct pil_priv, proxy);
+	__pil_proxy_unvote(priv);
 }
 
 static int pil_proxy_vote(struct pil_desc *desc)
@@ -206,6 +215,10 @@ static int pil_proxy_vote(struct pil_desc *desc)
 		if (ret)
 			wake_unlock(&priv->wlock);
 	}
+
+	if (desc->proxy_unvote_irq)
+		enable_irq(desc->proxy_unvote_irq);
+
 	return ret;
 }
 
@@ -237,8 +250,14 @@ static void pil_proxy_unvote(struct pil_desc *desc, int immediate)
 static irqreturn_t proxy_unvote_intr_handler(int irq, void *dev_id)
 {
 	struct pil_desc *desc = dev_id;
+	struct pil_priv *priv = desc->priv;
 
-	schedule_delayed_work(&desc->priv->proxy, 0);
+	pil_info(desc, "Power/Clock ready interrupt received\n");
+	if (!desc->priv->unvoted_flag) {
+		desc->priv->unvoted_flag = 1;
+		__pil_proxy_unvote(priv);
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -264,6 +283,12 @@ static struct pil_seg *pil_init_seg(const struct pil_desc *desc,
 			(unsigned long)phdr->p_paddr,
 			(unsigned long)(phdr->p_paddr + phdr->p_memsz));
 		return ERR_PTR(-EPERM);
+	}
+
+	if (phdr->p_filesz > phdr->p_memsz) {
+		pil_err(desc, "Segment %d: file size (%u) is greater than mem size (%u).\n",
+			num, phdr->p_filesz, phdr->p_memsz);
+		return ERR_PTR(-EINVAL);
 	}
 
 	seg = kmalloc(sizeof(*seg), GFP_KERNEL);
@@ -457,6 +482,9 @@ static int pil_init_mmap(struct pil_desc *desc, const struct pil_mdt *mdt)
 	if (ret)
 		return ret;
 
+	pil_info(desc, "loading from %pa to %pa\n", &priv->region_start,
+							&priv->region_end);
+
 	for (i = 0; i < mdt->hdr.e_phnum; i++) {
 		phdr = &mdt->phdr[i];
 		if (!segment_is_loadable(phdr))
@@ -494,51 +522,29 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 	int ret = 0, count;
 	phys_addr_t paddr;
 	char fw_name[30];
-	const struct firmware *fw = NULL;
-	const u8 *data;
 	int num = seg->num;
 
 	if (seg->filesz) {
 		snprintf(fw_name, ARRAY_SIZE(fw_name), "%s.b%02d",
 				desc->name, num);
-		ret = request_firmware(&fw, fw_name, desc->dev);
-		if (ret) {
-			pil_err(desc, "Failed to locate blob %s\n", fw_name);
+		ret = request_firmware_direct(fw_name, desc->dev, seg->paddr,
+					      seg->filesz);
+		if (ret < 0) {
+			pil_err(desc, "Failed to locate blob %s or blob is too big.\n",
+				fw_name);
 			return ret;
 		}
 
-		if (fw->size != seg->filesz) {
+		if (ret != seg->filesz) {
 			pil_err(desc, "Blob size %u doesn't match %lu\n",
-					fw->size, seg->filesz);
-			ret = -EPERM;
-			goto release_fw;
+					ret, seg->filesz);
+			return -EPERM;
 		}
-	}
-
-	/* Load the segment into memory */
-	count = seg->filesz;
-	paddr = seg->paddr;
-	data = fw ? fw->data : NULL;
-	while (count > 0) {
-		int size;
-		u8 __iomem *buf;
-
-		size = min_t(size_t, IOMAP_SIZE, count);
-		buf = ioremap(paddr, size);
-		if (!buf) {
-			pil_err(desc, "Failed to map memory\n");
-			ret = -ENOMEM;
-			goto release_fw;
-		}
-		memcpy(buf, data, size);
-		iounmap(buf);
-
-		count -= size;
-		paddr += size;
-		data += size;
+		ret = 0;
 	}
 
 	/* Zero out trailing memory */
+	paddr = seg->paddr + seg->filesz;
 	count = seg->sz - seg->filesz;
 	while (count > 0) {
 		int size;
@@ -548,8 +554,7 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 		buf = ioremap(paddr, size);
 		if (!buf) {
 			pil_err(desc, "Failed to map memory\n");
-			ret = -ENOMEM;
-			goto release_fw;
+			return -ENOMEM;
 		}
 		memset(buf, 0, size);
 		iounmap(buf);
@@ -564,9 +569,36 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 			pil_err(desc, "Blob%u failed verification\n", num);
 	}
 
-release_fw:
-	release_firmware(fw);
 	return ret;
+}
+
+static void pil_parse_devicetree(struct pil_desc *desc)
+{
+	int clk_ready = 0;
+
+	if (desc->ops->proxy_unvote &&
+		of_find_property(desc->dev->of_node,
+				"qcom,gpio-proxy-unvote",
+				NULL)) {
+		clk_ready = of_get_named_gpio(desc->dev->of_node,
+				"qcom,gpio-proxy-unvote", 0);
+
+		if (clk_ready < 0) {
+			dev_err(desc->dev,
+				"[%s]: Error getting proxy unvoting gpio\n",
+				desc->name);
+			return;
+		}
+
+		clk_ready = gpio_to_irq(clk_ready);
+		if (clk_ready < 0) {
+			dev_err(desc->dev,
+				"[%s]: Error getting proxy unvote IRQ\n",
+				desc->name);
+			return;
+		}
+	}
+	desc->proxy_unvote_irq = clk_ready;
 }
 
 /* Synchronize request_firmware() with suspend */
@@ -651,6 +683,7 @@ int pil_boot(struct pil_desc *desc)
 			goto release_fw;
 	}
 
+	desc->priv->unvoted_flag = 0;
 	ret = pil_proxy_vote(desc);
 	if (ret) {
 		pil_err(desc, "Failed to proxy vote\n");
@@ -687,10 +720,19 @@ EXPORT_SYMBOL(pil_boot);
 void pil_shutdown(struct pil_desc *desc)
 {
 	struct pil_priv *priv = desc->priv;
+
 	if (desc->ops->shutdown)
 		desc->ops->shutdown(desc);
-	if (proxy_timeout_ms == 0 && desc->ops->proxy_unvote)
-		desc->ops->proxy_unvote(desc);
+
+	if (desc->proxy_unvote_irq) {
+		disable_irq(desc->proxy_unvote_irq);
+		if (!desc->priv->unvoted_flag)
+			pil_proxy_unvote(desc, 1);
+		return;
+	}
+
+	if (!proxy_timeout_ms)
+		pil_proxy_unvote(desc, 1);
 	else
 		flush_delayed_work(&priv->proxy);
 }
@@ -714,12 +756,6 @@ int pil_desc_init(struct pil_desc *desc)
 	void __iomem *addr;
 	char buf[sizeof(priv->info->name)];
 
-	/* Ignore users who don't make any sense */
-	WARN(desc->ops->proxy_unvote && desc->proxy_unvote_irq == 0
-		 && !desc->proxy_timeout,
-		 "Invalid proxy unvote callback or a proxy timeout of 0"
-		 " was specified or no proxy unvote IRQ was specified.\n");
-
 	if (WARN(desc->ops->proxy_unvote && !desc->ops->proxy_vote,
 				"Invalid proxy voting. Ignoring\n"))
 		((struct pil_reset_ops *)desc->ops)->proxy_unvote = NULL;
@@ -740,10 +776,19 @@ int pil_desc_init(struct pil_desc *desc)
 	strncpy(buf, desc->name, sizeof(buf));
 	__iowrite32_copy(priv->info->name, buf, sizeof(buf) / 4);
 
-	if (desc->proxy_unvote_irq > 0) {
-		ret = request_irq(desc->proxy_unvote_irq,
+	pil_parse_devicetree(desc);
+
+	/* Ignore users who don't make any sense */
+	WARN(desc->ops->proxy_unvote && desc->proxy_unvote_irq == 0
+		 && !desc->proxy_timeout,
+		 "Invalid proxy unvote callback or a proxy timeout of 0"
+		 " was specified or no proxy unvote IRQ was specified.\n");
+
+	if (desc->proxy_unvote_irq) {
+		ret = request_threaded_irq(desc->proxy_unvote_irq,
+				  NULL,
 				  proxy_unvote_intr_handler,
-				  IRQF_TRIGGER_RISING|IRQF_SHARED,
+				  IRQF_TRIGGER_RISING,
 				  desc->name, desc);
 		if (ret < 0) {
 			dev_err(desc->dev,
@@ -751,11 +796,12 @@ int pil_desc_init(struct pil_desc *desc)
 				ret);
 			goto err;
 		}
+		disable_irq(desc->proxy_unvote_irq);
 	}
 
 	snprintf(priv->wname, sizeof(priv->wname), "pil-%s", desc->name);
 	wake_lock_init(&priv->wlock, WAKE_LOCK_SUSPEND, priv->wname);
-	INIT_DELAYED_WORK(&priv->proxy, pil_proxy_work);
+	INIT_DELAYED_WORK(&priv->proxy, pil_proxy_unvote_work);
 	INIT_LIST_HEAD(&priv->segs);
 
 	return 0;

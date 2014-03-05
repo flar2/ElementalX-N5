@@ -36,11 +36,11 @@
 #define SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE 128
 #define SMEM_IMAGE_VERSION_SIZE 4096
 #define SMEM_IMAGE_VERSION_NAME_SIZE 75
-#define SMEM_IMAGE_VERSION_NAME_OFFSET 3
 #define SMEM_IMAGE_VERSION_VARIANT_SIZE 20
 #define SMEM_IMAGE_VERSION_VARIANT_OFFSET 75
 #define SMEM_IMAGE_VERSION_OEM_SIZE 32
 #define SMEM_IMAGE_VERSION_OEM_OFFSET 96
+#define SMEM_IMAGE_VERSION_PARTITION_APPS 10
 
 enum {
 	HW_PLATFORM_UNKNOWN = 0,
@@ -818,24 +818,28 @@ msm_get_image_version(struct device *dev,
 		return snprintf(buf, SMEM_IMAGE_VERSION_NAME_SIZE, "Unknown");
 	}
 	string_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
-	string_address += SMEM_IMAGE_VERSION_NAME_OFFSET;
-	return snprintf(buf, SMEM_IMAGE_VERSION_NAME_SIZE, "%-.75s",
+	return snprintf(buf, SMEM_IMAGE_VERSION_NAME_SIZE, "%-.75s\n",
 			string_address);
 }
 
 static ssize_t
-msm_store_image_type(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
+msm_set_image_version(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf,
+			size_t count)
 {
-	int ret, digit;
+	char *store_address;
 
-	ret = kstrtoint(buf, 10, &digit);
-	if (ret)
-		return ret;
-	if (0 <= digit && digit < SMEM_IMAGE_VERSION_BLOCKS_COUNT)
-		current_image = digit;
-	else
-		current_image = 0;
+	if (current_image != SMEM_IMAGE_VERSION_PARTITION_APPS)
+		return count;
+	store_address = socinfo_get_image_version_base_address();
+	if (store_address == NULL) {
+		pr_err("%s : Failed to get image version base address",
+				__func__);
+		return count;
+	}
+	store_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
+	snprintf(store_address, SMEM_IMAGE_VERSION_NAME_SIZE, "%-.75s", buf);
 	return count;
 }
 
@@ -855,8 +859,30 @@ msm_get_image_variant(struct device *dev,
 	}
 	string_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
 	string_address += SMEM_IMAGE_VERSION_VARIANT_OFFSET;
-	return snprintf(buf, SMEM_IMAGE_VERSION_VARIANT_SIZE, "%-.20s",
+	return snprintf(buf, SMEM_IMAGE_VERSION_VARIANT_SIZE, "%-.20s\n",
 			string_address);
+}
+
+static ssize_t
+msm_set_image_variant(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf,
+			size_t count)
+{
+	char *store_address;
+
+	if (current_image != SMEM_IMAGE_VERSION_PARTITION_APPS)
+		return count;
+	store_address = socinfo_get_image_version_base_address();
+	if (store_address == NULL) {
+		pr_err("%s : Failed to get image version base address",
+				__func__);
+		return count;
+	}
+	store_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
+	store_address += SMEM_IMAGE_VERSION_VARIANT_OFFSET;
+	snprintf(store_address, SMEM_IMAGE_VERSION_VARIANT_SIZE, "%-.20s", buf);
+	return count;
 }
 
 static ssize_t
@@ -915,6 +941,54 @@ static struct sysdev_attribute socinfo_v7_files[] = {
 			socinfo_show_pmic_die_revision, NULL),
 };
 
+static ssize_t
+msm_set_image_crm_version(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf,
+			size_t count)
+{
+	char *store_address;
+
+	if (current_image != SMEM_IMAGE_VERSION_PARTITION_APPS)
+		return count;
+	store_address = socinfo_get_image_version_base_address();
+	if (store_address == NULL) {
+		pr_err("%s : Failed to get image version base address",
+				__func__);
+		return count;
+	}
+	store_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
+	store_address += SMEM_IMAGE_VERSION_OEM_OFFSET;
+	snprintf(store_address, SMEM_IMAGE_VERSION_OEM_SIZE, "%-.32s", buf);
+	return count;
+}
+
+static ssize_t
+msm_get_image_number(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n",
+			current_image);
+}
+
+static ssize_t
+msm_select_image(struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t count)
+{
+	int ret, digit;
+
+	ret = kstrtoint(buf, 10, &digit);
+	if (ret)
+		return ret;
+	if (0 <= digit && digit < SMEM_IMAGE_VERSION_BLOCKS_COUNT)
+		current_image = digit;
+	else
+		current_image = 0;
+	return count;
+}
+
+
 static struct device_attribute msm_soc_attr_raw_version =
 	__ATTR(raw_version, S_IRUGO, msm_get_raw_version,  NULL);
 
@@ -953,15 +1027,19 @@ static struct device_attribute msm_soc_attr_pmic_die_revision =
 
 static struct device_attribute image_version =
 	__ATTR(image_version, S_IRUGO | S_IWUSR,
-			msm_get_image_version, msm_store_image_type);
+			msm_get_image_version, msm_set_image_version);
 
 static struct device_attribute image_variant =
-	__ATTR(image_variant, S_IRUGO,
-			msm_get_image_variant, NULL);
+	__ATTR(image_variant, S_IRUGO | S_IWUSR,
+			msm_get_image_variant, msm_set_image_variant);
 
 static struct device_attribute image_crm_version =
-	__ATTR(image_crm_version, S_IRUGO,
-			msm_get_image_crm_version, NULL);
+	__ATTR(image_crm_version, S_IRUGO | S_IWUSR,
+			msm_get_image_crm_version, msm_set_image_crm_version);
+
+static struct device_attribute select_image =
+	__ATTR(select_image, S_IRUGO | S_IWUSR,
+			msm_get_image_number, msm_select_image);
 
 static struct sysdev_class soc_sysdev_class = {
 	.name = "soc",
@@ -1020,6 +1098,7 @@ static void __init populate_soc_sysfs_files(struct device *msm_soc_device)
 	device_create_file(msm_soc_device, &image_version);
 	device_create_file(msm_soc_device, &image_variant);
 	device_create_file(msm_soc_device, &image_crm_version);
+	device_create_file(msm_soc_device, &select_image);
 
 	switch (legacy_format) {
 	case 8:
@@ -1099,56 +1178,64 @@ static int __init socinfo_init_sysdev(void)
 
 	msm_soc_device = soc_device_to_device(soc_dev);
 	populate_soc_sysfs_files(msm_soc_device);
+
 	err = sysdev_class_register(&soc_sysdev_class);
 	if (err) {
 		pr_err("%s: sysdev_class_register fail (%d)\n",
 		       __func__, err);
-		return err;
+		goto socinfo_init_err;
 	}
+
 	err = sysdev_register(&soc_sys_device);
 	if (err) {
 		pr_err("%s: sysdev_register fail (%d)\n",
 		       __func__, err);
-		return err;
+		goto socinfo_init_err;
 	}
+
 	socinfo_create_files(&soc_sys_device, socinfo_v1_files,
 				ARRAY_SIZE(socinfo_v1_files));
 	if (socinfo->v1.format < 2)
-		return err;
+		goto socinfo_init_err;
+
 	socinfo_create_files(&soc_sys_device, socinfo_v2_files,
 				ARRAY_SIZE(socinfo_v2_files));
 
 	if (socinfo->v1.format < 3)
-		return err;
+		goto socinfo_init_err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v3_files,
 				ARRAY_SIZE(socinfo_v3_files));
 
 	if (socinfo->v1.format < 4)
-		return err;
+		goto socinfo_init_err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v4_files,
 				ARRAY_SIZE(socinfo_v4_files));
 
 	if (socinfo->v1.format < 5)
-		return err;
+		goto socinfo_init_err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v5_files,
 				ARRAY_SIZE(socinfo_v5_files));
 
 	if (socinfo->v1.format < 6)
-		return err;
+		goto socinfo_init_err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v6_files,
 				ARRAY_SIZE(socinfo_v6_files));
 
 	if (socinfo->v1.format < 7)
-		return err;
+		goto socinfo_init_err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v7_files,
 				ARRAY_SIZE(socinfo_v7_files));
 
 	return 0;
+
+socinfo_init_err:
+	 kfree(soc_dev_attr);
+         return err;
 }
 
 arch_initcall(socinfo_init_sysdev);

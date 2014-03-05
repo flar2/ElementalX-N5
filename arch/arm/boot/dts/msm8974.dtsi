@@ -24,6 +24,19 @@
 		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
 		sdhc3 = &sdhc_3; /* SDC3 SDIO slot */
 		sdhc4 = &sdhc_4; /* SDC4 SDIO slot */
+
+		/* smdtty devices */
+		smd1 = &smdtty_apps_fm;
+		smd2 = &smdtty_apps_riva_bt_acl;
+		smd3 = &smdtty_apps_riva_bt_cmd;
+		smd4 = &smdtty_mbalbridge;
+		smd5 = &smdtty_apps_riva_ant_cmd;
+		smd6 = &smdtty_apps_riva_ant_data;
+		smd7 = &smdtty_data1;
+		smd11 = &smdtty_data11;
+		smd21 = &smdtty_data21;
+		smd27 = &smdtty_gps_nmea;
+		smd36 = &smdtty_loopback;
 	};
 
 	cpus {
@@ -198,6 +211,7 @@
 		compatible = "qcom,msm-vidc";
 		reg = <0xfdc00000 0xff000>;
 		interrupts = <0 44 0>;
+		vdd-supply = <&gdsc_venus>;
 		qcom,hfi = "venus";
 		qcom,has-ocmem;
 		qcom,max-hw-load = <1224450>; /* 4k @ 30 + 1080p @ 30*/
@@ -258,6 +272,8 @@
 		qcom,hsusb-otg-mode = <1>;
 		qcom,hsusb-otg-otg-control = <1>;
 		qcom,hsusb-otg-disable-reset;
+		qcom,hsusb-otg-mpm-dpsehv-int = <49>;
+		qcom,hsusb-otg-mpm-dmsehv-int = <58>;
 
 		qcom,msm-bus,name = "usb2";
 		qcom,msm-bus,num-cases = <2>;
@@ -633,7 +649,6 @@
 
 		qcom,msm-bus,name = "tsif";
 		qcom,msm-bus,num-cases = <2>;
-		qcom,msm-bus,active-only = <0>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 				<82 512 0 0>, /* No vote */
@@ -1279,8 +1294,8 @@
 		qcom,msm-bus,num-cases = <2>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
-				<1 618 0 0>,
-				<1 618 0 800>;
+				<88 618 0 0>,
+				<88 618 0 800>;
         };
 
 	qseecom: qcom,qseecom@7b00000 {
@@ -1290,14 +1305,15 @@
 		qcom,disk-encrypt-pipe-pair = <2>;
 		qcom,hlos-ce-hw-instance = <1>;
 		qcom,qsee-ce-hw-instance = <0>;
+		qcom,support-bus-scaling = <1>;
 		qcom,msm-bus,name = "qseecom-noc";
 		qcom,msm-bus,num-cases = <4>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 				<55 512 0 0>,
-				<55 512 3936000 393600>,
-				<55 512 3936000 393600>,
-				<55 512 3936000 393600>;
+				<55 512 0 0>,
+				<55 512 120000 1200000>,
+				<55 512 393600 3936000>;
 	};
 
 	qcom,wdt@f9017000 {
@@ -1516,7 +1532,7 @@
 
         memory_hole: qcom,msm-mem-hole {
                 compatible = "qcom,msm-mem-hole";
-                qcom,memblock-remove = <0x7b00000 0x8400000>; /* Address and Size of Hole */
+                qcom,memblock-remove = <0x5d00000 0xa200000>; /* Address and Size of Hole */
         };
 
 	uart7: uart@f995d000 { /*BLSP #2, UART #7 */
@@ -1637,21 +1653,75 @@
 		compatible = "qcom,l2-pmu";
 		interrupts = <0 1 0>;
 	};
+
+	qcom,smdtty {
+		compatible = "qcom,smdtty";
+
+		smdtty_apps_fm: qcom,smdtty-apps-fm {
+			qcom,smdtty-remote = "wcnss";
+			qcom,smdtty-port-name = "APPS_FM";
+		};
+
+		smdtty_apps_riva_bt_acl: smdtty-apps-riva-bt-acl {
+			qcom,smdtty-remote = "wcnss";
+			qcom,smdtty-port-name = "APPS_RIVA_BT_ACL";
+		};
+
+		smdtty_apps_riva_bt_cmd: qcom,smdtty-apps-riva-bt-cmd {
+			qcom,smdtty-remote = "wcnss";
+			qcom,smdtty-port-name = "APPS_RIVA_BT_CMD";
+		};
+
+		smdtty_mbalbridge: qcom,smdtty-mbalbridge {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "MBALBRIDGE";
+		};
+
+		smdtty_apps_riva_ant_cmd: smdtty-apps-riva-ant-cmd {
+			qcom,smdtty-remote = "wcnss";
+			qcom,smdtty-port-name = "APPS_RIVA_ANT_CMD";
+		};
+
+		smdtty_apps_riva_ant_data: smdtty-apps-riva-ant-data {
+			qcom,smdtty-remote = "wcnss";
+			qcom,smdtty-port-name = "APPS_RIVA_ANT_DATA";
+		};
+
+		smdtty_data1: qcom,smdtty-data1 {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "DATA1";
+		};
+
+		smdtty_data11: qcom,smdtty-data11 {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "DATA11";
+		};
+
+		smdtty_data21: qcom,smdtty-data21 {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "DATA21";
+		};
+
+		smdtty_gps_nmea: smdtty-gpsnmea {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "GPSNMEA";
+		};
+
+		smdtty_loopback: smdtty-loopback {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "LOOPBACK";
+			qcom,smdtty-dev-name = "LOOPBACK_TTY";
+		};
+	};
 };
 
 &gdsc_venus {
 	qcom,clock-names = "core_clk";
-	qcom,skip-logic-collapse;
-	qcom,retain-periph;
-	qcom,retain-mem;
 	status = "ok";
 };
 
 &gdsc_mdss {
 	qcom,clock-names = "core_clk", "lut_clk";
-	qcom,skip-logic-collapse;
-	qcom,retain-periph;
-	qcom,retain-mem;
 	status = "ok";
 };
 
@@ -1668,8 +1738,6 @@
 
 &gdsc_oxili_gx {
 	qcom,clock-names = "core_clk";
-	qcom,retain-mem;
-	qcom,retain-periph;
 	status = "ok";
 };
 
