@@ -1052,4 +1052,10 @@ config PWRKEY_SUSPEND
 	tristate "Suspend touch wake if power button pressed"
 	default y
 
+config WAKE_TIMEOUT
+	tristate "Disable screen wake functions after timeout"
+	default y
+	help
+	 Disable screen wake functions after timeout
+
 endif
