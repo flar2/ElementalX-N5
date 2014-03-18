@@ -36,7 +36,7 @@
 static struct input_dev * wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 struct notifier_block wfnotif;
-static unsigned int wake_timeout = 60;
+static unsigned int wake_timeout = 0;
 static struct alarm wakefunc_rtc;
 static bool wakefunc_triggered = false;
 
@@ -207,9 +207,6 @@ static int __init wake_timeout_init(void)
 		pr_warn("%s: android_touch_kobj create_and_add failed\n", __func__);
 	}
 #endif
-	if (wt_kobj == NULL) {
-		pr_warn("%s: kobj create  failed\n", __func__);
-	}
 	rc = sysfs_create_file(android_touch_kobj, &dev_attr_wake_timeout.attr);
 	if (rc) {
 		pr_warn("%s: sysfs_create_file failed for wake_timeout\n", __func__);
