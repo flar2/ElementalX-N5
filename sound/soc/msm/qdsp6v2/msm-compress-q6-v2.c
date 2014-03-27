@@ -258,6 +258,13 @@ static void compr_event_handler(uint32_t opcode,
 	cstream = prtd->cstream;
 	ac = prtd->audio_client;
 
+	if (!prtd) {
+		pr_err("%s: prtd is NULL\n", __func__);
+		return;
+	}
+	cstream = prtd->cstream;
+	ac = prtd->audio_client;
+
 	pr_debug("%s opcode =%08x\n", __func__, opcode);
 	switch (opcode) {
 	case ASM_DATA_EVENT_WRITE_DONE_V2:
