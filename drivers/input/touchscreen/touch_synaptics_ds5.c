@@ -243,10 +243,33 @@ static int synaptics_t1320_power_on(struct i2c_client *client, int on)
 	}
 
 	if (on) {
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+		if (on == 1) {
+        	        rc = regulator_set_optimum_mode(vreg_l22, 15000);
+        	        if (rc < 0) {
+        	                pr_info("vreg_l22 hpm failed\n");
+        	        }
+        	        rc = regulator_set_optimum_mode(vreg_lvs3, 10000);
+        	        if (rc < 0) {
+        	                pr_info("vreg_lvs3 hpm failed\n");
+        	        }
+		} else if (on == 2) {
+			TOUCH_INFO_MSG("touch lpm mode\n");
+	    	        rc = regulator_set_optimum_mode(vreg_l22, 10);
+			if (rc < 0) {
+				pr_info("vreg_l22 lpm failed\n");
+			}
+			rc = regulator_set_optimum_mode(vreg_lvs3, 10);
+			if (rc < 0) {
+				pr_info("vreg_lvs3 lpm failed\n");
+			}
+		}
+#endif
 		TOUCH_INFO_MSG("touch on\n");
 		regulator_enable(vreg_l22);
 		udelay(6); /* Min delay 5.5us */
 		regulator_enable(vreg_lvs3);
+
 	} else {
 		TOUCH_INFO_MSG("touch off\n");
 		regulator_disable(vreg_lvs3);
@@ -401,6 +424,15 @@ static int touch_power_cntl(struct synaptics_ts_data *ts, int onoff)
 		else
 			ts->curr_pwr_state = POWER_WAKE;
 		break;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	case POWER_PREVENT_SLEEP:
+		ret = synaptics_ts_power(ts->client, POWER_PREVENT_SLEEP);
+		if (ret < 0)
+			TOUCH_ERR_MSG("power lpm failed\n");
+		else
+			ts->curr_pwr_state = POWER_WAKE;
+		break;
+#endif
 	default:
 		break;
 	}
@@ -1168,6 +1200,12 @@ static int synaptics_ts_power(struct i2c_client *client, int power_ctrl)
 			return -EIO;
 		}
 		break;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	case POWER_PREVENT_SLEEP:
+		synaptics_t1320_power_on(client, 2);
+		gpio_set_value(ts->pdata->reset_gpio, 1);
+		break;
+#endif
 	default:
 		return -EIO;
 		break;
@@ -1758,8 +1796,10 @@ static int lcd_notifier_callback(struct notifier_block *this,
 			mutex_unlock(&ts->input_dev->mutex);
 		}
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-		if (prevent_sleep)
+		if (prevent_sleep) {
+			touch_power_cntl(ts, POWER_PREVENT_SLEEP);
 			prevent_sleep_enable_irq_wake(ts->client->irq);
+		}
 #endif
 		break;
 	default:
@@ -1895,7 +1935,7 @@ static int synaptics_ts_probe(
 
 	ret = request_threaded_irq(client->irq, NULL, touch_irq_handler,
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-			IRQF_TRIGGER_FALLING | IRQF_ONESHOT, client->name, ts);
+			IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND, client->name, ts);
 #else
 			IRQF_TRIGGER_FALLING | IRQF_ONESHOT, client->name, ts);
 #endif
