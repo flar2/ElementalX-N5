@@ -409,7 +409,7 @@
 	rpm-regulator-ldoa22 {
 		status = "okay";
 		pm8941_l22: regulator-l22 {
-			regulator-min-microvolt = <3000000>;
+			regulator-min-microvolt = <2250000>;
 			regulator-max-microvolt = <3000000>;
 			qcom,init-voltage = <3000000>;
 			status = "okay";

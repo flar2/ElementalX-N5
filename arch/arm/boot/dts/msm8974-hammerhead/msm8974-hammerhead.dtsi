@@ -716,7 +716,7 @@
 &rpm_bus {
 	rpm-regulator-ldoa22 {
 		pm8941_l22: regulator-l22 {
-			regulator-min-microvolt = <2700000>;
+			regulator-min-microvolt = <2250000>;
 			regulator-max-microvolt = <3300000>;
 			qcom,init-voltage = <2700000>;
 		};
