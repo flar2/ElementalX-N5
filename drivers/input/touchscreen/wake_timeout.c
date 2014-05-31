@@ -31,34 +31,18 @@
 #define WAKE_TIMEOUT_MAJOR_VERSION	1
 #define WAKE_TIMEOUT_MINOR_VERSION	0
 #define WAKEFUNC "wakefunc"
-#define PWRKEY_DUR		60
 
-static struct input_dev * wake_pwrdev;
-static DEFINE_MUTEX(pwrkeyworklock);
 struct notifier_block wfnotif;
 static unsigned int wake_timeout = 0;
 static struct alarm wakefunc_rtc;
 static bool wakefunc_triggered = false;
 
+extern void ext_mdss_dsi_panel_off(void);
 
 static void wake_presspwr(struct work_struct * wake_presspwr_work) {
-	if (!mutex_trylock(&pwrkeyworklock))
-                return;
-	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 1);
-	input_event(wake_pwrdev, EV_SYN, 0, 0);
-	msleep(PWRKEY_DUR);
-	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 0);
-	input_event(wake_pwrdev, EV_SYN, 0, 0);
-	msleep(PWRKEY_DUR * 3);
-	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 1);
-	input_event(wake_pwrdev, EV_SYN, 0, 0);
-	msleep(PWRKEY_DUR);
-	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 0);
-	input_event(wake_pwrdev, EV_SYN, 0, 0);
-	msleep(PWRKEY_DUR);
-        mutex_unlock(&pwrkeyworklock);
 	wakefunc_triggered = true;
 	pwrkey_pressed = true;
+	ext_mdss_dsi_panel_off();
 	return;
 }
 static DECLARE_WORK(wake_presspwr_work, wake_presspwr);
@@ -185,22 +169,6 @@ static int __init wake_timeout_init(void)
 	alarm_init(&wakefunc_rtc, ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP,
 			wakefunc_rtc_callback);
 
-	wake_pwrdev = input_allocate_device();
-	if (!wake_pwrdev) {
-		pr_err("Can't allocate suspend autotest power button\n");
-		goto err_alloc_dev;
-	}
-
-	input_set_capability(wake_pwrdev, EV_KEY, KEY_POWER);
-	wake_pwrdev->name = "wakefunc_pwrkey";
-	wake_pwrdev->phys = "wakefunc_pwrkey/input0";
-
-	rc = input_register_device(wake_pwrdev);
-	if (rc) {
-		pr_err("%s: input_register_device err=%d\n", __func__, rc);
-		goto err_input_dev;
-	}
-
 #ifndef ANDROID_TOUCH_DECLARED
 	android_touch_kobj = kobject_create_and_add("android_touch", NULL) ;
 	if (android_touch_kobj == NULL) {
@@ -217,11 +185,6 @@ static int __init wake_timeout_init(void)
 	if (rc)
 		pr_warn("%s: error\n", __func__);
 
-err_input_dev:
-	input_free_device(wake_pwrdev);
-err_alloc_dev:
-	pr_info(WAKEFUNC"%s: done\n", __func__);
-
 	return 0;
 }
 
@@ -234,9 +197,6 @@ static void __exit wake_timeout_exit(void)
 	kobject_del(android_touch_kobj);
 #endif
 	lcd_unregister_client(&wfnotif);
-	input_unregister_device(wake_pwrdev);
-	input_free_device(wake_pwrdev);
-
 	return;
 }
 
