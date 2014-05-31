@@ -405,6 +405,13 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	return 0;
 }
 
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+void ext_mdss_dsi_panel_off(void)
+{
+	mdss_dsi_panel_reset(cmds_panel_data, 0);
+}
+#endif
+
 static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		struct dsi_panel_cmds *pcmds, char *cmd_key, char *link_key)
 {
