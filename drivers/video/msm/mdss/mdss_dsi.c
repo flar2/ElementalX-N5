@@ -90,7 +90,7 @@ static int mdss_dsi_regulator_init(struct platform_device *pdev)
 			return PTR_ERR(dsi_drv->vdd_io_vreg);
 		}
 
-		ret = regulator_set_voltage(dsi_drv->vdd_io_vreg, 1800000,
+		ret = regulator_set_voltage(dsi_drv->vdd_io_vreg, 1000000,
 				1800000);
 		if (ret) {
 			pr_err("%s: set voltage failed on vddio vreg, rc=%d\n",
@@ -251,7 +251,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 
 			if (mdss_dsi_use_vdd_supply) {
 				ret = regulator_set_optimum_mode(
-					(ctrl_pdata->shared_pdata).vdd_vreg, 100);
+					(ctrl_pdata->shared_pdata).vdd_vreg, 10);
 				if (ret < 0) {
 					pr_err("%s: vdd_vreg set opt mode failed.\n",
 						 __func__);
@@ -260,7 +260,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 			}
 
 			ret = regulator_set_optimum_mode(
-				(ctrl_pdata->shared_pdata).vdd_io_vreg, 100);
+				(ctrl_pdata->shared_pdata).vdd_io_vreg, 10);
 			if (ret < 0) {
 				pr_err("%s: vdd_io_vreg set opt mode failed.\n",
 					__func__);
@@ -268,7 +268,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 			}
 
 			ret = regulator_set_optimum_mode(
-				(ctrl_pdata->shared_pdata).vdda_vreg, 100);
+				(ctrl_pdata->shared_pdata).vdda_vreg, 10);
 			if (ret < 0) {
 				pr_err("%s: vdda_vreg set opt mode failed.\n",
 					__func__);
