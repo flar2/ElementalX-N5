@@ -90,7 +90,7 @@ static int mdss_dsi_regulator_init(struct platform_device *pdev)
 			return PTR_ERR(dsi_drv->vdd_io_vreg);
 		}
 
-		ret = regulator_set_voltage(dsi_drv->vdd_io_vreg, 1000000,
+		ret = regulator_set_voltage(dsi_drv->vdd_io_vreg, 1800000,
 				1800000);
 		if (ret) {
 			pr_err("%s: set voltage failed on vddio vreg, rc=%d\n",
