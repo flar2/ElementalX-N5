@@ -1781,7 +1781,7 @@ struct sk_buff *l2cap_create_iframe_pdu(struct sock *sk,
 					u16 sdulen, int reseg)
 {
 	struct sk_buff *skb;
-	int err, count, hlen;
+	int err = 0, count = 0, hlen = 0;
 	int reserve = 0;
 	struct l2cap_hdr *lh;
 	u8 fcs = l2cap_pi(sk)->fcs;
@@ -3999,7 +3999,7 @@ static void l2cap_conf_ext_fs_get(struct sock *sk, void *rsp, int len)
 static int l2cap_finish_amp_move(struct sock *sk)
 {
 	struct l2cap_pinfo *pi;
-	int err;
+	int err =0;
 
 	BT_DBG("sk %p", sk);
 

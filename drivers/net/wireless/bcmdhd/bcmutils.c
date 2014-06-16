@@ -1014,7 +1014,7 @@ int
 bcm_ether_atoe(const char *p, struct ether_addr *ea)
 {
 	int i = 0;
-	char *ep;
+	char *ep = NULL;
 
 	for (;;) {
 		ea->octet[i++] = (char) bcm_strtoul(p, &ep, 16);
