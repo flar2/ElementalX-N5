@@ -852,7 +852,7 @@ static int audit_filter_rules(struct task_struct *tsk,
 static enum audit_state audit_filter_task(struct task_struct *tsk, char **key)
 {
 	struct audit_entry *e;
-	enum audit_state   state;
+	enum audit_state state = 0;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(e, &audit_filter_list[AUDIT_FILTER_TASK], list) {
