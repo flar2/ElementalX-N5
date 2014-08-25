@@ -36,7 +36,7 @@
 static struct input_dev * wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 struct notifier_block wfnotif;
-static unsigned int wake_timeout = 0;
+static long long wake_timeout = 0;
 static struct alarm wakefunc_rtc;
 static bool wakefunc_triggered = false;
 
@@ -76,15 +76,15 @@ static void wakefunc_rtc_start(void)
 	wakefunc_triggered = false;
 	curr_time = alarm_get_elapsed_realtime();
 	wakeup_time = ktime_add_us(curr_time,
-			(wake_timeout * USEC_PER_MSEC * 60000));
+			(wake_timeout * 1000LL * 60000LL));
 	alarm_start_range(&wakefunc_rtc, wakeup_time,
 			wakeup_time);
-	pr_debug("%s: Current Time: %ld, Alarm set to: %ld\n",
+	pr_info("%s: Current Time: %ld, Alarm set to: %ld\n",
 			WAKEFUNC,
 			ktime_to_timeval(curr_time).tv_sec,
 			ktime_to_timeval(wakeup_time).tv_sec);
 		
-	pr_info("%s: Timeout started for %u minutes\n", WAKEFUNC,
+	pr_info("%s: Timeout started for %llu minutes\n", WAKEFUNC,
 			wake_timeout);
 }
 
@@ -118,16 +118,16 @@ static void wakefunc_rtc_callback(struct alarm *al)
 static ssize_t show_wake_timeout(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", wake_timeout);
+	return snprintf(buf, PAGE_SIZE, "%lld\n", wake_timeout);
 }
 
 static ssize_t store_wake_timeout(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	unsigned int input;
+	unsigned long long input;
 	int ret;
 
-	ret = sscanf(buf, "%u", &input);
+	ret = sscanf(buf, "%llu", &input);
 
 	if (ret != 1) {
 		return -EINVAL;
