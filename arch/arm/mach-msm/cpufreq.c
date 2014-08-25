@@ -406,7 +406,7 @@ out:
 
 struct freq_attr msm_cpufreq_attr_max_screen_off_khz = {
 	.attr = { .name = "screen_off_max_freq",
-		.mode = 0644,
+		.mode = 0666,
 	},
 	.show = show_max_screen_off_khz,
 	.store = store_max_screen_off_khz,
@@ -429,7 +429,7 @@ static ssize_t store_max_screen_off(struct cpufreq_policy *policy,
 
 struct freq_attr msm_cpufreq_attr_max_screen_off = {
 	.attr = { .name = "screen_off_max",
-		.mode = 0644,
+		.mode = 0666,
 	},
 	.show = show_max_screen_off,
 	.store = store_max_screen_off,
