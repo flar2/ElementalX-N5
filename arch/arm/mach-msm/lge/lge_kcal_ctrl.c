@@ -84,8 +84,8 @@ static ssize_t kcal_ctrl_show(struct device *dev,
 		return sprintf(buf, "OK\n");
 }
 
-static DEVICE_ATTR(kcal, 0644, kcal_show, kcal_store);
-static DEVICE_ATTR(kcal_ctrl, 0644, kcal_ctrl_show, kcal_ctrl_store);
+static DEVICE_ATTR(kcal, 0666, kcal_show, kcal_store);
+static DEVICE_ATTR(kcal_ctrl, 0666, kcal_ctrl_show, kcal_ctrl_store);
 
 static int kcal_ctrl_probe(struct platform_device *pdev)
 {
