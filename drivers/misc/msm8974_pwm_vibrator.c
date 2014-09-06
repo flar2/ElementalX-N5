@@ -738,7 +738,7 @@ static ssize_t vibrator_warmup_ms_store(struct device *dev,
 }
 
 static struct device_attribute vibrator_device_attrs[] = {
-	__ATTR(amp, S_IRUGO | S_IWUSR, vibrator_amp_show, vibrator_amp_store),
+	__ATTR(amp, 0666, vibrator_amp_show, vibrator_amp_store),
 	__ATTR(n_val, S_IRUGO | S_IWUSR, vibrator_pwm_show, vibrator_pwm_store),
 	__ATTR(braking_gain, S_IRUGO | S_IWUSR,
 		vibrator_braking_gain_show, vibrator_braking_gain_store),
