@@ -21,11 +21,11 @@
 #include <linux/lcd_notify.h>
 
 #define MSM_SLEEPER_MAJOR_VERSION	3
-#define MSM_SLEEPER_MINOR_VERSION	0
+#define MSM_SLEEPER_MINOR_VERSION	2
 
 extern uint32_t maxscroff;
 extern uint32_t maxscroff_freq;
-static uint32_t oldmax_freq;
+extern uint32_t ex_max_freq;
 static int limit_set = 0;
 
 struct notifier_block notif;
@@ -34,14 +34,9 @@ static void msm_sleeper_suspend(void)
 {
 	int cpu;
 
-	struct cpufreq_policy *policy;
-
-	policy = cpufreq_cpu_get(0);
-	oldmax_freq = policy->max;
-
 	for_each_possible_cpu(cpu) {
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, maxscroff_freq);
-		pr_info("Limit max frequency to: %d\n", maxscroff_freq);
+		//pr_info("Limit max frequency to: %d\n", maxscroff_freq);
 	}
 	limit_set = 1;
 
@@ -53,8 +48,8 @@ static void msm_sleeper_resume(void)
 	int cpu;
 
 	for_each_possible_cpu(cpu) {
-		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, oldmax_freq);
-		pr_info("Restore max frequency to %d\n", MSM_CPUFREQ_NO_LIMIT);
+		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, ex_max_freq);
+		//pr_info("Restore max frequency to %d\n", MSM_CPUFREQ_NO_LIMIT);
 	}
 	limit_set = 0;
 
