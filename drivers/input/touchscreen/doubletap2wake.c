@@ -384,6 +384,10 @@ static ssize_t dt2w_doubletap2wake_dump(struct device *dev,
                 if (dt2w_switch != buf[0] - '0')
 		        dt2w_switch = buf[0] - '0';
 
+	if (scr_suspended && !dt2w_switch && !s2w_switch) {
+		wake_pwrtrigger();
+	}
+
 	return count;
 }
 
