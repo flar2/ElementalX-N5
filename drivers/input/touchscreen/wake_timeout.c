@@ -24,6 +24,9 @@
 #include <linux/sysfs.h>
 #include <linux/init.h>
 
+#include <linux/input/sweep2wake.h>
+#include <linux/input/doubletap2wake.h>
+
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
 #define ANDROID_TOUCH_DECLARED
 #endif
@@ -49,7 +52,11 @@ static void wake_presspwr(struct work_struct * wake_presspwr_work) {
 	msleep(PWRKEY_DUR);
 	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 0);
 	input_event(wake_pwrdev, EV_SYN, 0, 0);
-	msleep(PWRKEY_DUR * 3);
+
+	msleep(PWRKEY_DUR * 6);
+	wakefunc_triggered = true;
+	pwrkey_pressed = true;
+
 	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(wake_pwrdev, EV_SYN, 0, 0);
 	msleep(PWRKEY_DUR);
@@ -57,13 +64,12 @@ static void wake_presspwr(struct work_struct * wake_presspwr_work) {
 	input_event(wake_pwrdev, EV_SYN, 0, 0);
 	msleep(PWRKEY_DUR);
         mutex_unlock(&pwrkeyworklock);
-	wakefunc_triggered = true;
-	pwrkey_pressed = true;
+	
 	return;
 }
 static DECLARE_WORK(wake_presspwr_work, wake_presspwr);
 
-static void wake_pwrtrigger(void) {
+void wake_pwrtrigger(void) {
 	schedule_work(&wake_presspwr_work);
         return;
 }
@@ -72,6 +78,9 @@ static void wakefunc_rtc_start(void)
 {
 	ktime_t wakeup_time;
 	ktime_t curr_time;
+
+	if (!dt2w_switch && !s2w_switch)
+		return;
 
 	wakefunc_triggered = false;
 	curr_time = alarm_get_elapsed_realtime();
