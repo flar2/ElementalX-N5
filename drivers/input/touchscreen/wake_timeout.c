@@ -24,6 +24,9 @@
 #include <linux/sysfs.h>
 #include <linux/init.h>
 
+#include <linux/input/sweep2wake.h>
+#include <linux/input/doubletap2wake.h>
+
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
 #define ANDROID_TOUCH_DECLARED
 #endif
@@ -66,7 +69,7 @@ static void wake_presspwr(struct work_struct * wake_presspwr_work) {
 }
 static DECLARE_WORK(wake_presspwr_work, wake_presspwr);
 
-static void wake_pwrtrigger(void) {
+void wake_pwrtrigger(void) {
 	schedule_work(&wake_presspwr_work);
         return;
 }
