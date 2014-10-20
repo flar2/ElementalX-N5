@@ -2,13 +2,13 @@
  * Linux cfg80211 Vendor Extension Code
  *
  * Copyright (C) 1999-2014, Broadcom Corporation
- * 
+ *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
- * 
+ *
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -16,7 +16,7 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
- * 
+ *
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
@@ -35,15 +35,16 @@
 #define OUI_BRCM    0x001018
 #define OUI_GOOGLE  0x001A11
 #define BRCM_VENDOR_SUBCMD_PRIV_STR	1
-#define VENDOR_ID_OVERHEAD                 (NLA_HDRLEN  + 4)
-#define VENDOR_SUBCMD_OVERHEAD             (NLA_HDRLEN  + 4)
+#define ATTRIBUTE_U32_LEN                  (NLA_HDRLEN  + 4)
+#define VENDOR_ID_OVERHEAD                 ATTRIBUTE_U32_LEN
+#define VENDOR_SUBCMD_OVERHEAD             ATTRIBUTE_U32_LEN
 #define VENDOR_DATA_OVERHEAD               (NLA_HDRLEN)
 
-#define SCAN_RESULTS_COMPLETE_FLAG_LEN  (NLA_HDRLEN  + 4)
+#define SCAN_RESULTS_COMPLETE_FLAG_LEN       ATTRIBUTE_U32_LEN
 #define SCAN_INDEX_HDR_LEN                   (NLA_HDRLEN)
-#define SCAN_ID_HDR_LEN                      (NLA_HDRLEN + 4)
-#define SCAN_FLAGS_HDR_LEN                   (NLA_HDRLEN + 4)
-#define GSCAN_NUM_RESULTS_HDR_LEN            (NLA_HDRLEN + 4)
+#define SCAN_ID_HDR_LEN                      ATTRIBUTE_U32_LEN
+#define SCAN_FLAGS_HDR_LEN                   ATTRIBUTE_U32_LEN
+#define GSCAN_NUM_RESULTS_HDR_LEN            ATTRIBUTE_U32_LEN
 #define GSCAN_RESULTS_HDR_LEN                (NLA_HDRLEN)
 #define GSCAN_BATCH_RESULT_HDR_LEN  (SCAN_INDEX_HDR_LEN + SCAN_ID_HDR_LEN + \
 									SCAN_FLAGS_HDR_LEN + \
@@ -92,6 +93,9 @@ enum wl_vendor_subcmd {
 	GSCAN_SUBCMD_SET_HOTLIST,
 	GSCAN_SUBCMD_SET_SIGNIFICANT_CHANGE_CONFIG,
 	GSCAN_SUBCMD_ENABLE_FULL_SCAN_RESULTS,
+	GSCAN_SUBCMD_GET_CHANNEL_LIST,
+	ANDR_WIFI_SUBCMD_GET_FEATURE_SET,
+	ANDR_WIFI_SUBCMD_GET_FEATURE_SET_MATRIX,
     /* Add more sub commands here */
     GSCAN_SUBCMD_MAX,
 
@@ -101,7 +105,7 @@ enum wl_vendor_subcmd {
 enum gscan_attributes {
     GSCAN_ATTRIBUTE_NUM_BUCKETS = 10,
     GSCAN_ATTRIBUTE_BASE_PERIOD,
-    GSCAN_ATTRIBUTE_BUCKETS,
+    GSCAN_ATTRIBUTE_BUCKETS_BAND,
     GSCAN_ATTRIBUTE_BUCKET_ID,
     GSCAN_ATTRIBUTE_BUCKET_PERIOD,
     GSCAN_ATTRIBUTE_BUCKET_NUM_CHANNELS,
@@ -109,11 +113,13 @@ enum gscan_attributes {
     GSCAN_ATTRIBUTE_NUM_AP_PER_SCAN,
     GSCAN_ATTRIBUTE_REPORT_THRESHOLD,
     GSCAN_ATTRIBUTE_NUM_SCANS_TO_CACHE,
+    GSCAN_ATTRIBUTE_BAND = GSCAN_ATTRIBUTE_BUCKETS_BAND,
 
     GSCAN_ATTRIBUTE_ENABLE_FEATURE = 20,
     GSCAN_ATTRIBUTE_SCAN_RESULTS_COMPLETE,
     GSCAN_ATTRIBUTE_FLUSH_FEATURE,
     GSCAN_ATTRIBUTE_ENABLE_FULL_SCAN_RESULTS,
+    GSCAN_ATTRIBUTE_REPORT_EVENTS,
     /* remaining reserved for additional attributes */
     GSCAN_ATTRIBUTE_NUM_OF_RESULTS = 30,
     GSCAN_ATTRIBUTE_FLUSH_RESULTS,
@@ -121,6 +127,8 @@ enum gscan_attributes {
     GSCAN_ATTRIBUTE_SCAN_ID,                            /* indicates scan number */
     GSCAN_ATTRIBUTE_SCAN_FLAGS,                         /* indicates if scan was aborted */
     GSCAN_ATTRIBUTE_AP_FLAGS,                           /* flags on significant change event */
+    GSCAN_ATTRIBUTE_NUM_CHANNELS,
+    GSCAN_ATTRIBUTE_CHANNEL_LIST,
 
 	/* remaining reserved for additional attributes */
 
@@ -168,13 +176,21 @@ enum gscan_ch_attributes {
 	GSCAN_ATTRIBUTE_CH_ID_7
 };
 
-enum wl_vendor_event {
+typedef enum wl_vendor_event {
 	BRCM_VENDOR_EVENT_UNSPEC,
 	BRCM_VENDOR_EVENT_PRIV_STR,
 	GOOGLE_GSCAN_SIGNIFICANT_EVENT,
 	GOOGLE_GSCAN_GEOFENCE_FOUND_EVENT,
 	GOOGLE_GSCAN_BATCH_SCAN_EVENT,
-	GOOGLE_SCAN_FULL_RESULTS_EVENT
+	GOOGLE_SCAN_FULL_RESULTS_EVENT,
+	GOOGLE_SCAN_RTT_EVENT,
+	GOOGLE_SCAN_COMPLETE_EVENT,
+	GOOGLE_GSCAN_GEOFENCE_LOST_EVENT
+} wl_vendor_event_t;
+
+enum andr_wifi_feature_set_attr {
+    ANDR_WIFI_ATTRIBUTE_NUM_FEATURE_SET,
+    ANDR_WIFI_ATTRIBUTE_FEATURE_SET
 };
 
 typedef enum wl_vendor_gscan_attribute {
@@ -200,6 +216,11 @@ typedef enum gscan_geofence_attribute {
 	ATTR_GSCAN_HOTLIST_BSSID
 } gscan_geofence_attribute_t;
 
+typedef enum gscan_complete_event {
+	WIFI_SCAN_BUFFER_FULL,
+	WIFI_SCAN_COMPLETE
+} gscan_complete_event_t;
+
 /* Capture the BRCM_VENDOR_SUBCMD_PRIV_STRINGS* here */
 #define BRCM_VENDOR_SCMD_CAPA	"cap"
 
@@ -208,8 +229,8 @@ extern int wl_cfgvendor_attach(struct wiphy *wiphy);
 extern int wl_cfgvendor_detach(struct wiphy *wiphy);
 extern int wl_cfgvendor_send_async_event(struct wiphy *wiphy,
                   struct net_device *dev, int event_id, const void  *data, int len);
-extern int wl_cfgvendor_send_hotlist_found_event(struct wiphy *wiphy,
-                struct net_device *dev, void  *data, int len);
+extern int wl_cfgvendor_send_hotlist_event(struct wiphy *wiphy,
+                struct net_device *dev, void  *data, int len, wl_vendor_event_t event);
 #endif /* (LINUX_VERSION_CODE > KERNEL_VERSION(3, 13, 0)) || defined(WL_VENDOR_EXT_SUPPORT) */
 
 #endif /* _wl_cfgvendor_h_ */

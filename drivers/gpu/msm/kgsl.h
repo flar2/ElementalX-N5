@@ -146,7 +146,7 @@ struct kgsl_memdesc;
 struct kgsl_cmdbatch;
 
 struct kgsl_memdesc_ops {
-	int (*vmflags)(struct kgsl_memdesc *);
+	unsigned int vmflags;
 	int (*vmfault)(struct kgsl_memdesc *, struct vm_area_struct *,
 		       struct vm_fault *);
 	void (*free)(struct kgsl_memdesc *memdesc);
@@ -178,6 +178,7 @@ struct kgsl_memdesc {
 	unsigned int sglen_alloc;  /* Allocated entries in the sglist */
 	struct kgsl_memdesc_ops *ops;
 	unsigned int flags; /* Flags set from userspace */
+	struct device *dev;
 };
 
 /* List of different memory entry types */
@@ -202,6 +203,7 @@ struct kgsl_mem_entry {
 	struct kgsl_process_private *priv;
 	/* Initialized to 0, set to 1 when entry is marked for freeing */
 	int pending_free;
+	struct kgsl_device_private *dev_priv;
 };
 
 #ifdef CONFIG_MSM_KGSL_MMU_PAGE_FAULT

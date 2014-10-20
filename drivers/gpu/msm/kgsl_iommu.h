@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -91,10 +91,16 @@ struct kgsl_iommu_register_list {
  * Max number of iommu units that the gpu core can have
  * On APQ8064, KGSL can control a maximum of 2 IOMMU units.
  */
-#define KGSL_IOMMU_MAX_UNITS 2
+enum kgsl_iommu_units {
+	KGSL_IOMMU_UNIT_0 = 0,
+	KGSL_IOMMU_UNIT_1 = 1,
+	KGSL_IOMMU_MAX_UNITS = 2,
+};
 
 /* Max number of iommu contexts per IOMMU unit */
 #define KGSL_IOMMU_MAX_DEVS_PER_UNIT 2
+/* Max number of iommu clks per IOMMU unit */
+#define KGSL_IOMMU_MAX_CLKS 3
 
 /* Macros to read/write IOMMU registers */
 #define KGSL_IOMMU_SET_CTX_REG_LL(iommu, iommu_unit, ctx, REG, val)	\
@@ -167,6 +173,8 @@ struct kgsl_iommu_device {
  * @iommu_halt_enable: Valid only on IOMMU-v1, when set indicates that the iommu
  * unit supports halting of the IOMMU, which can be enabled while programming
  * the IOMMU registers for synchronization
+ * @clk_enable_count: The ref count of clock enable calls
+ * @clks: iommu unit clks
  */
 struct kgsl_iommu_unit {
 	struct kgsl_iommu_device dev[KGSL_IOMMU_MAX_DEVS_PER_UNIT];
@@ -174,6 +182,8 @@ struct kgsl_iommu_unit {
 	struct kgsl_memdesc reg_map;
 	unsigned int ahb_base;
 	int iommu_halt_enable;
+	atomic_t clk_enable_count;
+	struct clk *clks[KGSL_IOMMU_MAX_CLKS];
 };
 
 /*
@@ -182,10 +192,6 @@ struct kgsl_iommu_unit {
  * iommu contexts owned by graphics cores
  * @unit_count: Number of IOMMU units that are available for this
  * instance of the IOMMU driver
- * @iommu_last_cmd_ts: The timestamp of last command submitted that
- * aceeses iommu registers
- * @clk_event_queued: Indicates whether an event to disable clocks
- * is already queued or not
  * @device: Pointer to kgsl device
  * @ctx_offset: The context offset to be added to base address when
  * accessing IOMMU registers
@@ -201,8 +207,6 @@ struct kgsl_iommu_unit {
 struct kgsl_iommu {
 	struct kgsl_iommu_unit iommu_units[KGSL_IOMMU_MAX_UNITS];
 	unsigned int unit_count;
-	unsigned int iommu_last_cmd_ts;
-	bool clk_event_queued;
 	struct kgsl_device *device;
 	unsigned int ctx_offset;
 	struct kgsl_iommu_register_list *iommu_reg_list;
@@ -220,6 +224,20 @@ struct kgsl_iommu {
 struct kgsl_iommu_pt {
 	struct iommu_domain *domain;
 	struct kgsl_iommu *iommu;
+};
+
+/*
+ * struct kgsl_iommu_disable_clk_param - Parameter struct for disble clk event
+ * @mmu: The mmu pointer
+ * @rb_level: the rb level in which the timestamp of the event belongs to
+ * @unit: The IOMMU unit whose clock is to be turned off
+ * @ts: Timestamp on which clock is to be disabled
+ */
+struct kgsl_iommu_disable_clk_param {
+	struct kgsl_mmu *mmu;
+	int rb_level;
+	int unit;
+	unsigned int ts;
 };
 
 #endif

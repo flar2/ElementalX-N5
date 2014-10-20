@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -127,8 +127,8 @@ struct kgsl_functable {
 	void (*drawctxt_destroy) (struct kgsl_context *context);
 	long (*ioctl) (struct kgsl_device_private *dev_priv,
 		unsigned int cmd, void *data);
-	int (*setproperty) (struct kgsl_device *device,
-		enum kgsl_property_type type, void *value,
+	int (*setproperty) (struct kgsl_device_private *dev_priv,
+		enum kgsl_property_type type, void __user *value,
 		unsigned int sizebytes);
 	int (*postmortem_dump) (struct kgsl_device *device, int manual);
 	void (*drawctxt_sched)(struct kgsl_device *device,
@@ -361,6 +361,7 @@ struct kgsl_process_private;
  * @flags: flags from userspace controlling the behavior of this context
  * @fault_count: number of times gpu hanged in last _context_throttle_time ms
  * @fault_time: time of the first gpu hang in last _context_throttle_time ms
+ * @pwr_constraint: power constraint from userspace for this context
  */
 struct kgsl_context {
 	struct kref refcount;
@@ -379,6 +380,7 @@ struct kgsl_context {
 	unsigned int flags;
 	unsigned int fault_count;
 	unsigned long fault_time;
+	struct kgsl_pwr_constraint pwr_constraint;
 };
 
 /**
@@ -708,6 +710,24 @@ static inline void kgsl_cancel_events_timestamp(struct kgsl_device *device,
 void kgsl_cmdbatch_destroy(struct kgsl_cmdbatch *cmdbatch);
 
 void kgsl_cmdbatch_destroy_object(struct kref *kref);
+
+/**
+* kgsl_process_private_get() - increment the refcount on a kgsl_process_private
+*   struct
+* @process: Pointer to the KGSL process_private
+*
+* Returns 0 if the structure is invalid and a reference count could not be
+* obtained, nonzero otherwise.
+*/
+static inline int kgsl_process_private_get(struct kgsl_process_private *process)
+{
+	int ret = 0;
+	if (process != NULL)
+		ret = kref_get_unless_zero(&process->refcount);
+	return ret;
+}
+
+void kgsl_process_private_put(struct kgsl_process_private *private);
 
 /**
  * kgsl_cmdbatch_put() - Decrement the refcount for a command batch object

@@ -20,6 +20,7 @@
 #include <linux/iommu.h>
 #include <mach/iommu.h>
 #include <mach/socinfo.h>
+#include <linux/types.h>
 
 #include "kgsl.h"
 #include "kgsl_mmu.h"
@@ -385,12 +386,18 @@ int kgsl_mmu_init(struct kgsl_device *device)
 	status = kgsl_allocate_contiguous(&mmu->setstate_memory, PAGE_SIZE);
 	if (status)
 		return status;
+
+	/* Mark the setstate memory as read only */
+	mmu->setstate_memory.flags |= KGSL_MEMFLAGS_GPUREADONLY;
+
 	kgsl_sharedmem_set(device, &mmu->setstate_memory, 0, 0,
 				mmu->setstate_memory.size);
 
 	if (KGSL_MMU_TYPE_NONE == kgsl_mmu_type) {
 		dev_info(device->dev, "|%s| MMU type set for device is "
 				"NOMMU\n", __func__);
+		status = dma_set_coherent_mask(device->dev->parent,
+					DMA_BIT_MASK(sizeof(dma_addr_t)*8));
 		goto done;
 	} else if (KGSL_MMU_TYPE_GPU == kgsl_mmu_type)
 		mmu->mmu_ops = &gpummu_ops;
@@ -730,6 +737,10 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 	if (!kgsl_memdesc_is_global(memdesc) &&
 		(KGSL_MEMDESC_MAPPED & memdesc->priv))
 		return -EINVAL;
+
+	if (kgsl_mmu_get_mmutype() == KGSL_MMU_TYPE_NONE)
+		return 0;
+
 	/* Add space for the guard page when allocating the mmu VA. */
 	size = memdesc->size;
 	if (kgsl_memdesc_has_guard_page(memdesc))

@@ -1332,8 +1332,6 @@ _sleep(struct kgsl_device *device)
 		break;
 	}
 
-	kgsl_mmu_disable_clk_on_ts(&device->mmu, 0, false);
-
 	return 0;
 }
 
@@ -1464,7 +1462,10 @@ void kgsl_pwrctrl_enable(struct kgsl_device *device)
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	/* Order pwrrail/clk sequence based upon platform */
 	kgsl_pwrctrl_pwrrail(device, KGSL_PWRFLAGS_ON);
-	kgsl_pwrctrl_pwrlevel_change(device, pwr->default_pwrlevel);
+
+	if (pwr->constraint.type == KGSL_CONSTRAINT_NONE)
+		kgsl_pwrctrl_pwrlevel_change(device, pwr->default_pwrlevel);
+
 	kgsl_pwrctrl_clk(device, KGSL_PWRFLAGS_ON, KGSL_STATE_ACTIVE);
 	kgsl_pwrctrl_axi(device, KGSL_PWRFLAGS_ON);
 }
