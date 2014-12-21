@@ -28,9 +28,6 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 
-#define CREATE_TRACE_POINTS
-#include <trace/events/cpufreq_interactive.h>
-
 #include <mach/kgsl.h>
 static int orig_up_threshold = 90;
 static int g_count = 0;
@@ -59,9 +56,6 @@ static unsigned int skip_elementalx = 0;
 #define LATENCY_MULTIPLIER			(1000)
 #define MIN_LATENCY_MULTIPLIER			(100)
 #define TRANSITION_LATENCY_LIMIT		(10 * 1000 * 1000)
-
-#define POWERSAVE_BIAS_MAXLEVEL			(1000)
-#define POWERSAVE_BIAS_MINLEVEL			(-1000)
 
 static void do_dbs_timer(struct work_struct *work);
 static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
@@ -138,7 +132,6 @@ static struct dbs_tuners {
 	unsigned int sync_freq;
 	unsigned int ignore_nice;
 	unsigned int sampling_down_factor;
-	int           powersave_bias;
 	unsigned int io_is_busy;
 	unsigned int two_phase_freq;
 	unsigned int origin_sampling_rate;
@@ -153,7 +146,6 @@ static struct dbs_tuners {
 	.down_differential_multi_core = MICRO_FREQUENCY_DOWN_DIFFERENTIAL,
 	.up_threshold_any_cpu_load = DEF_FREQUENCY_UP_THRESHOLD,
 	.ignore_nice = 0,
-	.powersave_bias = 0,
 	.sync_freq = 0,
 	.optimal_freq = 0,
 	.io_is_busy = 1,
@@ -207,92 +199,6 @@ static inline cputime64_t get_cpu_iowait_time(unsigned int cpu, cputime64_t *wal
 	return iowait_time;
 }
 
-static unsigned int powersave_bias_target(struct cpufreq_policy *policy,
-					  unsigned int freq_next,
-					  unsigned int relation)
-{
-	unsigned int freq_req, freq_avg;
-	unsigned int freq_hi, freq_lo;
-	unsigned int index = 0;
-	unsigned int jiffies_total, jiffies_hi, jiffies_lo;
-	int freq_reduc;
-	struct cpu_dbs_info_s *dbs_info = &per_cpu(od_cpu_dbs_info,
-						   policy->cpu);
-
-	if (!dbs_info->freq_table) {
-		dbs_info->freq_lo = 0;
-		dbs_info->freq_lo_jiffies = 0;
-		return freq_next;
-	}
-
-	cpufreq_frequency_table_target(policy, dbs_info->freq_table, freq_next,
-			relation, &index);
-	freq_req = dbs_info->freq_table[index].frequency;
-	freq_reduc = freq_req * dbs_tuners_ins.powersave_bias / 1000;
-	freq_avg = freq_req - freq_reduc;
-
-	
-	index = 0;
-	cpufreq_frequency_table_target(policy, dbs_info->freq_table, freq_avg,
-			CPUFREQ_RELATION_H, &index);
-	freq_lo = dbs_info->freq_table[index].frequency;
-	index = 0;
-	cpufreq_frequency_table_target(policy, dbs_info->freq_table, freq_avg,
-			CPUFREQ_RELATION_L, &index);
-	freq_hi = dbs_info->freq_table[index].frequency;
-
-	
-	if (freq_hi == freq_lo) {
-		dbs_info->freq_lo = 0;
-		dbs_info->freq_lo_jiffies = 0;
-		return freq_lo;
-	}
-	jiffies_total = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
-	jiffies_hi = (freq_avg - freq_lo) * jiffies_total;
-	jiffies_hi += ((freq_hi - freq_lo) / 2);
-	jiffies_hi /= (freq_hi - freq_lo);
-	jiffies_lo = jiffies_total - jiffies_hi;
-	dbs_info->freq_lo = freq_lo;
-	dbs_info->freq_lo_jiffies = jiffies_lo;
-	dbs_info->freq_hi_jiffies = jiffies_hi;
-	return freq_hi;
-}
-
-static int elementalx_powersave_bias_setspeed(struct cpufreq_policy *policy,
-					    struct cpufreq_policy *altpolicy,
-					    int level)
-{
-	if (level == POWERSAVE_BIAS_MAXLEVEL) {
-		
-		__cpufreq_driver_target(policy,
-			(altpolicy) ? altpolicy->min : policy->min,
-			CPUFREQ_RELATION_L);
-		return 1;
-	} else if (level == POWERSAVE_BIAS_MINLEVEL) {
-		
-		__cpufreq_driver_target(policy,
-			(altpolicy) ? altpolicy->max : policy->max,
-			CPUFREQ_RELATION_H);
-		return 1;
-	}
-	return 0;
-}
-
-static void elementalx_powersave_bias_init_cpu(int cpu)
-{
-	struct cpu_dbs_info_s *dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
-	dbs_info->freq_table = cpufreq_frequency_get_table(cpu);
-	dbs_info->freq_lo = 0;
-}
-
-static void elementalx_powersave_bias_init(void)
-{
-	int i;
-	for_each_online_cpu(i) {
-		elementalx_powersave_bias_init_cpu(i);
-	}
-}
-
 static ssize_t show_sampling_rate_min(struct kobject *kobj,
 				      struct attribute *attr, char *buf)
 {
@@ -317,12 +223,6 @@ show_one(optimal_freq, optimal_freq);
 show_one(up_threshold_any_cpu_load, up_threshold_any_cpu_load);
 show_one(sync_freq, sync_freq);
 show_one(gboost, gboost);
-
-static ssize_t show_powersave_bias
-(struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", dbs_tuners_ins.powersave_bias);
-}
 
 static void update_sampling_rate(unsigned int new_rate)
 {
@@ -626,109 +526,6 @@ static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b,
 	return count;
 }
 
-static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
-				    const char *buf, size_t count)
-{
-	int input  = 0;
-	int bypass = 0;
-	int ret, cpu, reenable_timer, j;
-	struct cpu_dbs_info_s *dbs_info;
-
-	struct cpumask cpus_timer_done;
-	cpumask_clear(&cpus_timer_done);
-
-	ret = sscanf(buf, "%d", &input);
-
-	if (ret != 1)
-		return -EINVAL;
-
-	if (input >= POWERSAVE_BIAS_MAXLEVEL) {
-		input  = POWERSAVE_BIAS_MAXLEVEL;
-		bypass = 1;
-	} else if (input <= POWERSAVE_BIAS_MINLEVEL) {
-		input  = POWERSAVE_BIAS_MINLEVEL;
-		bypass = 1;
-	}
-
-	if (input == dbs_tuners_ins.powersave_bias) {
-		
-		return count;
-	}
-
-	reenable_timer = ((dbs_tuners_ins.powersave_bias ==
-				POWERSAVE_BIAS_MAXLEVEL) ||
-				(dbs_tuners_ins.powersave_bias ==
-				POWERSAVE_BIAS_MINLEVEL));
-
-	dbs_tuners_ins.powersave_bias = input;
-	if (!bypass) {
-		if (reenable_timer) {
-			
-			for_each_online_cpu(cpu) {
-				if (lock_policy_rwsem_write(cpu) < 0)
-					continue;
-
-				dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
-
-				for_each_cpu(j, &cpus_timer_done) {
-					if (!dbs_info->cur_policy) {
-						pr_err("Dbs policy is NULL\n");
-						goto skip_this_cpu;
-					}
-					if (cpumask_test_cpu(j, dbs_info->
-							cur_policy->cpus))
-						goto skip_this_cpu;
-				}
-
-				cpumask_set_cpu(cpu, &cpus_timer_done);
-				if (dbs_info->cur_policy) {
-					
-					dbs_timer_init(dbs_info);
-				}
-skip_this_cpu:
-				unlock_policy_rwsem_write(cpu);
-			}
-		}
-		elementalx_powersave_bias_init();
-	} else {
-		for_each_online_cpu(cpu) {
-			if (lock_policy_rwsem_write(cpu) < 0)
-				continue;
-
-			dbs_info = &per_cpu(od_cpu_dbs_info, cpu);
-
-			for_each_cpu(j, &cpus_timer_done) {
-				if (!dbs_info->cur_policy) {
-					pr_err("Dbs policy is NULL\n");
-					goto skip_this_cpu_bypass;
-				}
-				if (cpumask_test_cpu(j, dbs_info->
-							cur_policy->cpus))
-					goto skip_this_cpu_bypass;
-			}
-
-			cpumask_set_cpu(cpu, &cpus_timer_done);
-
-			if (dbs_info->cur_policy) {
-				
-				mutex_lock(&dbs_info->timer_mutex);
-				dbs_timer_exit(dbs_info);
-
-				elementalx_powersave_bias_setspeed(
-					dbs_info->cur_policy,
-					NULL,
-					input);
-
-				mutex_unlock(&dbs_info->timer_mutex);
-			}
-skip_this_cpu_bypass:
-			unlock_policy_rwsem_write(cpu);
-		}
-	}
-
-	return count;
-}
-
 static ssize_t store_gboost(struct kobject *a, struct attribute *b,
 				const char *buf, size_t count)
 {
@@ -747,7 +544,6 @@ define_one_global_rw(up_threshold);
 define_one_global_rw(down_differential);
 define_one_global_rw(sampling_down_factor);
 define_one_global_rw(ignore_nice_load);
-define_one_global_rw(powersave_bias);
 define_one_global_rw(up_threshold_multi_core);
 define_one_global_rw(optimal_freq);
 define_one_global_rw(up_threshold_any_cpu_load);
@@ -765,7 +561,6 @@ static struct attribute *dbs_attributes[] = {
 	&down_differential.attr,
 	&sampling_down_factor.attr,
 	&ignore_nice_load.attr,
-	&powersave_bias.attr,
 	&up_threshold_multi_core.attr,
 	&optimal_freq.attr,
 	&up_threshold_any_cpu_load.attr,
@@ -907,19 +702,12 @@ static inline int get_cpu_freq_index(unsigned int freq)
 
 static void dbs_freq_increase(struct cpufreq_policy *p, unsigned load, unsigned int freq)
 {
-	if (dbs_tuners_ins.powersave_bias)
-		freq = powersave_bias_target(p, freq, CPUFREQ_RELATION_H);
-	else if (p->cur == p->max) {
-		trace_cpufreq_interactive_already (p->cpu, load, p->cur, p->cur, p->cur);
+	if (p->cur == p->max) {
 		return;
 	}
 
-	trace_cpufreq_interactive_target (p->cpu, load, p->cur, p->cur, freq);
-
-	__cpufreq_driver_target(p, freq, (dbs_tuners_ins.powersave_bias || freq < p->max) ?
+	__cpufreq_driver_target(p, freq, (freq < p->max) ?
 			CPUFREQ_RELATION_L : CPUFREQ_RELATION_H);
-
-	trace_cpufreq_interactive_up (p->cpu, freq, p->cur);
 }
 
 int set_two_phase_freq(int cpufreq)
@@ -1023,7 +811,6 @@ static unsigned int get_cpu_current_load(unsigned int j, unsigned int *record)
 
 static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 {
-	unsigned int load_at_max_freq = 0;
 	unsigned int max_load_freq;
 	
 	unsigned int cur_load = 0;
@@ -1042,21 +829,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	max_load_freq = 0;
 
 	for_each_cpu(j, policy->cpus) {
-		unsigned int load_freq;
-		int freq_avg;
-
 		cur_load = get_cpu_current_load(j, &prev_load);
-		freq_avg = __cpufreq_driver_getavg(policy, j);
-		if (freq_avg <= 0)
-			freq_avg = policy->cur;
-
-		load_freq = cur_load * freq_avg;
-		if (load_freq > max_load_freq)
-			max_load_freq = load_freq;
-
-		
-		load_at_max_freq += (cur_load * policy->cur) /
-					policy->cpuinfo.max_freq;
+					
+		if (cur_load > max_load_freq)
+			max_load_freq = cur_load * policy->cur;
 	}
 
 	for_each_online_cpu(j) {
@@ -1079,8 +855,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		}
 	}
 
-	cpufreq_notify_utilization(policy, load_at_max_freq);
-	
 	//gboost
 	if (g_count > 30) {
 
@@ -1195,12 +969,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	if (input_event_boosted())
 	{
-		trace_cpufreq_interactive_already (policy->cpu, cur_load, policy->cur, policy->cur, policy->cur);
 		return;
 	}
 	
 	if (policy->cur == policy->min){
-		trace_cpufreq_interactive_already (policy->cpu, cur_load, policy->cur, policy->cur, policy->cur);
 		return;
 	}
 
@@ -1230,13 +1002,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				freq_next = dbs_tuners_ins.optimal_freq;
 		}
 
-		if (dbs_tuners_ins.powersave_bias)
-			freq_next = powersave_bias_target(policy, freq_next, CPUFREQ_RELATION_L);
-
-		trace_cpufreq_interactive_target (policy->cpu, cur_load, policy->cur, policy->cur, freq_next);
 		__cpufreq_driver_target(policy, freq_next,
 			CPUFREQ_RELATION_L);
-		trace_cpufreq_interactive_down (policy->cpu, freq_next, policy->cur);
 	}
 }
 
@@ -1254,8 +1021,7 @@ static void do_dbs_timer(struct work_struct *work)
 		goto sched_wait;
 	
 	dbs_info->sample_type = DBS_NORMAL_SAMPLE;
-	if (!dbs_tuners_ins.powersave_bias ||
-	    sample_type == DBS_NORMAL_SAMPLE) {
+	if (sample_type == DBS_NORMAL_SAMPLE) {
 		dbs_check_cpu(dbs_info);
 		if (dbs_info->freq_lo) {
 			
@@ -1309,11 +1075,6 @@ static void dbs_input_event(struct input_handle *handle, unsigned int type,
 
 	if (dbs_tuners_ins.input_event_timeout == 0)
 		return;
-
-	if ((dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MAXLEVEL) ||
-		(dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MINLEVEL)) {
-		return;
-	}
 
 	if (type == EV_ABS && code == ABS_MT_TRACKING_ID) {
 		if (value != -1) {		
@@ -1449,7 +1210,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		}
 		this_dbs_info->cpu = cpu;
 		this_dbs_info->rate_mult = 1;
-		elementalx_powersave_bias_init_cpu(cpu);
 		if (dbs_enable == 1) {
 			unsigned int latency;
 
@@ -1488,12 +1248,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 		mutex_init(&this_dbs_info->timer_mutex);
 
-		if (!elementalx_powersave_bias_setspeed(
-					this_dbs_info->cur_policy,
-					NULL,
-					dbs_tuners_ins.powersave_bias))
-			dbs_timer_init(this_dbs_info);
-		trace_cpufreq_interactive_target (cpu, 0, 0, 0, 0);
+		dbs_timer_init(this_dbs_info);
 		break;
 
 	case CPUFREQ_GOV_STOP:
@@ -1510,7 +1265,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			sysfs_remove_group(cpufreq_global_kobject,
 					   &dbs_attr_group);
 		}
-		trace_cpufreq_interactive_target (cpu, 0, 0, 0, 0);
 		break;
 
 	case CPUFREQ_GOV_LIMITS:
@@ -1522,11 +1276,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			else if (policy->min > this_dbs_info->cur_policy->cur)
 				__cpufreq_driver_target(this_dbs_info->cur_policy,
 					policy->min, CPUFREQ_RELATION_L);
-			else if (dbs_tuners_ins.powersave_bias != 0)
-				elementalx_powersave_bias_setspeed(
-					this_dbs_info->cur_policy,
-					policy,
-					dbs_tuners_ins.powersave_bias);
 		}
 		mutex_unlock(&this_dbs_info->timer_mutex);
 		break;
@@ -1563,7 +1312,6 @@ static int cpufreq_gov_dbs_up_task(void *data)
 
 		mutex_lock(&this_dbs_info->timer_mutex);
 
-		dbs_tuners_ins.powersave_bias = 0;
 		dbs_freq_increase(policy, this_dbs_info->prev_load, this_dbs_info->input_event_freq);
 		this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu, &this_dbs_info->prev_cpu_wall);
 
