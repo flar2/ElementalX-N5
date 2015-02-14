@@ -167,6 +167,8 @@ static void sweep2wake_pwrtrigger(void) {
 	if (pwrtrigger_time[0] - pwrtrigger_time[1] < TRIGGER_TIMEOUT)
 		return;
 
+	set_vibrate(vib_strength);
+
 	schedule_work(&sweep2wake_presspwr_work);
         return;
 }
@@ -213,7 +215,6 @@ static void detect_sweep2wake_v(int x, int y, bool st)
 						if (y < (nexty - S2W_Y_NEXT)) {
 							if (exec_county && (jiffies - firsty_time < SWEEP_TIMEOUT)) {
 								pr_info(LOGTAG"sweep up\n");
-								set_vibrate(vib_strength);
 								if (gestures_switch) {
 									report_gesture(3);
 								} else {
@@ -240,7 +241,6 @@ static void detect_sweep2wake_v(int x, int y, bool st)
 						if (y > (nexty + S2W_Y_NEXT)) {
 							if (exec_county && (jiffies - firsty_time < SWEEP_TIMEOUT)) {
 								pr_info(LOGTAG"sweep down\n");
-								set_vibrate(vib_strength);
 								if (gestures_switch) {
 									report_gesture(4);
 								} else {
@@ -292,7 +292,6 @@ static void detect_sweep2wake_h(int x, int y, bool st, bool wake)
 					if (x > (S2W_X_MAX - S2W_X_FINAL)) {
 						if (exec_countx && (jiffies - firstx_time < SWEEP_TIMEOUT)) {
 							pr_info(LOGTAG"sweep right\n");
-							set_vibrate(vib_strength);
 							if (gestures_switch && wake) {
 								report_gesture(1);
 							} else {
@@ -322,7 +321,6 @@ static void detect_sweep2wake_h(int x, int y, bool st, bool wake)
 					if (x < S2W_X_FINAL) {
 						if (exec_countx) {
 							pr_info(LOGTAG"sweep left\n");
-							set_vibrate(vib_strength);
 							if (gestures_switch && wake) {
 								report_gesture(2);
 							} else {
