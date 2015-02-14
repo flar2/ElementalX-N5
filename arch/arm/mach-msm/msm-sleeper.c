@@ -23,14 +23,14 @@
 #define MSM_SLEEPER "msm_sleeper"
 #define MSM_SLEEPER_MAJOR_VERSION	4
 #define MSM_SLEEPER_MINOR_VERSION	0
-#define MSM_SLEEPER_ENABLED		1
+#define MSM_SLEEPER_ENABLED		0
 #define MSM_SLEEPER_DEBUG		0
 #define DELAY				HZ
 #define DEF_UP_THRESHOLD		80
 #define DEF_MAX_ONLINE			4
 #define DEF_DOWN_COUNT_MAX		10 /* 1 sec */
 #define DEF_UP_COUNT_MAX		4 /* 0.4 sec */
-#define DEF_SUSPEND_MAX_ONLINE		1
+#define DEF_SUSPEND_MAX_ONLINE		2
 
 struct msm_sleeper_data {
 	unsigned int enabled;
