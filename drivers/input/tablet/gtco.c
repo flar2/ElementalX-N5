@@ -219,7 +219,7 @@ static void parse_hid_report_descriptor(struct gtco *device, char * report,
 
 	/* Global Values, indexed by TAG */
 	__u32 globalval[TAG_GLOB_MAX];
-	__u32 oldval[TAG_GLOB_MAX];
+	__u32 oldval[TAG_GLOB_MAX] = {0};
 
 	/* Debug stuff */
 	char  maintype = 'x';
