@@ -375,7 +375,7 @@ static int msm_cpufreq_resume(struct cpufreq_policy *policy)
 static ssize_t show_ex_max_freq(struct cpufreq_policy *policy, char *buf)
 {
 	if (!ex_max_freq)
-		ex_max_freq = policy->max;
+		ex_max_freq = policy->cpuinfo.max_freq;
 
 	return sprintf(buf, "%u\n", ex_max_freq);
 }
