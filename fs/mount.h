@@ -4,8 +4,11 @@
 
 struct mnt_namespace {
 	atomic_t		count;
+	unsigned int		proc_inum;
 	struct mount *	root;
 	struct list_head	list;
+	struct user_namespace	*user_ns;
+	u64			seq;	/* Sequence number to prevent loops */
 	wait_queue_head_t poll;
 	int event;
 };
@@ -74,10 +77,12 @@ static inline void get_mnt_ns(struct mnt_namespace *ns)
 }
 
 struct proc_mounts {
-	struct seq_file m; /* must be the first element */
+	struct seq_file m;
 	struct mnt_namespace *ns;
 	struct path root;
 	int (*show)(struct seq_file *, struct vfsmount *);
 };
+
+#define proc_mounts(p) (container_of((p), struct proc_mounts, m))
 
 extern const struct seq_operations mounts_op;
