@@ -15,10 +15,6 @@
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
 #include <trace/events/power.h>
-#include <linux/moduleparam.h>
-
-static bool enable_si_ws = true;
-module_param(enable_si_ws, bool, 0644);
 
 #include "power.h"
 
@@ -511,10 +507,6 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 	if (ws->autosleep_enabled)
 		update_prevent_sleep_time(ws, now);
 
-	if (!enable_si_ws && !strcmp(ws->name, "sensor_ind")) {
-		pr_info("wakeup source sensor_ind activate skipped\n");
-		return;
-	}
 	/*
 	 * Increment the counter of registered wakeup events and decrement the
 	 * couter of wakeup events in progress simultaneously.
