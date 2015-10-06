@@ -73,6 +73,11 @@ enum vidc_core_state {
 	VIDC_CORE_INVALID
 };
 
+enum vidc_calculation {
+	CLOCKS = 0,
+	LOAD
+};
+
 /*Donot change the enum values unless
  * you know what you are doing*/
 enum instance_state {
@@ -181,6 +186,7 @@ struct msm_vidc_core_capability {
 	struct hal_capability_supported height;
 	struct hal_capability_supported frame_rate;
 	struct hal_capability_supported hier_p;
+	struct hal_capability_supported mbs_per_frame;
 	u32 capability_set;
 };
 

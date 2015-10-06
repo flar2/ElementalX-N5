@@ -343,15 +343,22 @@ static int wl_cfgvendor_gscan_get_batch_results(struct wiphy *wiphy,
 	int err = 0;
 	struct wl_priv *cfg = wiphy_priv(wiphy);
 	gscan_results_cache_t *results, *iter;
-	uint32 reply_len, complete = 1, num_results_iter;
-	int32 mem_needed;
+	uint32 reply_len, complete = 1;
+	int32 mem_needed, num_results_iter;
 	wifi_gscan_result_t *ptr;
 	uint16 num_scan_ids, num_results;
 	struct sk_buff *skb;
 	struct nlattr *scan_hdr, *complete_flag;
 
-	dhd_dev_wait_batch_results_complete(wl_to_prmry_ndev(cfg));
-	dhd_dev_pno_lock_access_batch_results(wl_to_prmry_ndev(cfg));
+	err = dhd_dev_wait_batch_results_complete(wl_to_prmry_ndev(cfg));
+	if (err != BCME_OK)
+		return -EBUSY;
+
+	err = dhd_dev_pno_lock_access_batch_results(wl_to_prmry_ndev(cfg));
+	if (err != BCME_OK) {
+		WL_ERR(("Can't obtain lock to access batch results %d\n", err));
+		return -EBUSY;
+	}
 	results = dhd_dev_pno_get_gscan(wl_to_prmry_ndev(cfg),
 	             DHD_PNO_GET_BATCH_RESULTS, NULL, &reply_len);
 
@@ -538,7 +545,7 @@ static int wl_cfgvendor_set_scan_cfg(struct wiphy *wiphy,
 							break;
 						case GSCAN_ATTRIBUTE_BUCKET_CHANNELS:
 							nla_for_each_nested(iter2, iter1, tmp2) {
-								if (k >= PFN_SWC_RSSI_WINDOW_MAX)
+								if (k >= GSCAN_MAX_CHANNELS_IN_BUCKET)
 									break;
 								ch_bucket[j].chan_list[k] =
 								     nla_get_u32(iter2);
@@ -557,12 +564,10 @@ static int wl_cfgvendor_set_scan_cfg(struct wiphy *wiphy,
 						case GSCAN_ATTRIBUTE_BUCKET_STEP_COUNT:
 							ch_bucket[j].repeat = (uint16)
 							     nla_get_u32(iter1);
-							    printk("step count %d\n", ch_bucket[j].repeat);
 							break;
 						case GSCAN_ATTRIBUTE_BUCKET_MAX_PERIOD:
 							ch_bucket[j].bucket_max_multiple =
 							     nla_get_u32(iter1)/1000;
-							    printk("bucket_max_multiple %d\n", ch_bucket[j].bucket_max_multiple);
 							break;
 					}
 				}
@@ -1188,20 +1193,39 @@ static int wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
 	return err;
 }
 
+#define NUM_CHAN 11
 static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void  *data, int len)
 {
 	struct wl_priv *cfg = wiphy_priv(wiphy);
 	int err = 0;
 	wifi_iface_stat *ptr;
+	wifi_radio_stat *radio;
 	wl_wme_cnt_t *wl_wme_cnt;
 	wl_cnt_t *wl_cnt;
+	char *output;
+	uint32 reply_len = sizeof(wifi_radio_stat)+
+				NUM_CHAN*sizeof(wifi_channel_stat)+
+				sizeof(wifi_iface_stat);
 
 	WL_INFO(("%s: Enter \n", __func__));
 
 	bzero(cfg->ioctl_buf, WLC_IOCTL_MAXLEN);
 
-	ptr = (wifi_iface_stat *)cfg->ioctl_buf;
+	output = cfg->ioctl_buf;
+	radio = (wifi_radio_stat *)output;
+
+	radio->num_channels = NUM_CHAN;
+	output += sizeof(wifi_radio_stat);
+	output += (NUM_CHAN*sizeof(wifi_channel_stat));
+
+	ptr = (wifi_iface_stat *)output;
+
+	err = (reply_len > WLC_IOCTL_MAXLEN) ? -EPERM : 0;
+	if (unlikely(err)) {
+		WL_ERR(("link stats buffer overruns (%d)\n", err));
+		return err;
+	}
 
 	err = wldev_iovar_getbuf(wl_to_prmry_ndev(cfg), "wme_counters", NULL, 0,
 		iovar_buf, WLC_IOCTL_MAXLEN, NULL);
@@ -1248,8 +1272,10 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 		return err;
 	}
 
+	ptr->num_peers = 0;
+
 	err =  wl_cfgvendor_send_cmd_reply(wiphy, wl_to_prmry_ndev(cfg),
-	                   cfg->ioctl_buf, sizeof(wifi_iface_stat));
+		cfg->ioctl_buf, reply_len);
 	if (unlikely(err))
 		WL_ERR(("Vendor Command reply failed ret:%d \n", err));
 

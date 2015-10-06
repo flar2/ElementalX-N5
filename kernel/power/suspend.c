@@ -184,10 +184,11 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		if (!(suspend_test(TEST_CORE) || *wakeup)) {
 			error = suspend_ops->enter(state);
 			events_check_enabled = false;
-		} else {
+		} else if (*wakeup) {
 			pm_get_active_wakeup_sources(suspend_abort,
 				MAX_SUSPEND_ABORT_LEN);
 			log_suspend_abort_reason(suspend_abort);
+			error = -EBUSY;
 		}
 
 		start_logging_wakeup_reasons();
@@ -244,7 +245,7 @@ static bool suspend_again(bool *drivers_resumed)
 	 * callbacks.  Don't bother thawing the kernel threads if a match is
 	 * not found.
          */
-	irqs = get_wakeup_reasons(HZ, &unfinished);
+	irqs = get_wakeup_reasons(msecs_to_jiffies(100), &unfinished);
 	if (!suspend_again_match(irqs, &unfinished))
 		return false;
 

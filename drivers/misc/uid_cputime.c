@@ -38,6 +38,8 @@ struct uid_entry {
 	cputime_t stime;
 	cputime_t active_utime;
 	cputime_t active_stime;
+	unsigned long long active_power;
+	unsigned long long power;
 	struct hlist_node hash;
 };
 
@@ -75,7 +77,7 @@ static struct uid_entry *find_or_register_uid(uid_t uid)
 static int uid_stat_show(struct seq_file *m, void *v)
 {
 	struct uid_entry *uid_entry;
-	struct task_struct *task;
+	struct task_struct *task, *temp;
 	struct hlist_node *node;
 	cputime_t utime;
 	cputime_t stime;
@@ -86,10 +88,11 @@ static int uid_stat_show(struct seq_file *m, void *v)
 	hash_for_each(hash_table, bkt, node, uid_entry, hash) {
 		uid_entry->active_stime = 0;
 		uid_entry->active_utime = 0;
+		uid_entry->active_power = 0;
 	}
 
 	read_lock(&tasklist_lock);
-	for_each_process(task) {
+	do_each_thread(temp, task) {
 		uid_entry = find_or_register_uid(task_uid(task));
 		if (!uid_entry) {
 			read_unlock(&tasklist_lock);
@@ -98,10 +101,15 @@ static int uid_stat_show(struct seq_file *m, void *v)
 						__func__, task_uid(task));
 			return -ENOMEM;
 		}
+		/* if this task is exiting, we have already accounted for the
+		 * time and power. */
+		if (task->cpu_power == ULLONG_MAX)
+			continue;
 		task_times(task, &utime, &stime);
 		uid_entry->active_utime += utime;
 		uid_entry->active_stime += stime;
-	}
+		uid_entry->active_power += task->cpu_power;
+	} while_each_thread(temp, task);
 	read_unlock(&tasklist_lock);
 
 	hash_for_each(hash_table, bkt, node, uid_entry, hash) {
@@ -109,9 +117,14 @@ static int uid_stat_show(struct seq_file *m, void *v)
 							uid_entry->active_utime;
 		cputime_t total_stime = uid_entry->stime +
 							uid_entry->active_stime;
-		seq_printf(m, "%d: %u %u\n", uid_entry->uid,
-						cputime_to_usecs(total_utime),
-						cputime_to_usecs(total_stime));
+		unsigned long long total_power = uid_entry->power +
+							uid_entry->active_power;
+		seq_printf(m, "%d: %llu %llu %llu\n", uid_entry->uid,
+			(unsigned long long)jiffies_to_msecs(
+				cputime_to_jiffies(total_utime)) * USEC_PER_MSEC,
+			(unsigned long long)jiffies_to_msecs(
+				cputime_to_jiffies(total_stime)) * USEC_PER_MSEC,
+			total_power);
 	}
 
 	mutex_unlock(&uid_lock);
@@ -204,6 +217,8 @@ static int process_notifier(struct notifier_block *self,
 	task_times(task, &utime, &stime);
 	uid_entry->utime += utime;
 	uid_entry->stime += stime;
+	uid_entry->power += task->cpu_power;
+	task->cpu_power = ULLONG_MAX;
 
 exit:
 	mutex_unlock(&uid_lock);
