@@ -30,7 +30,11 @@
 #include <linux/of.h>
 #include <linux/sysfs.h>
 #include <linux/types.h>
+#ifdef CONFIG_ANDROID_INTF_ALARM_DEV
+#include <linux/alarmtimer.h>
+#else
 #include <linux/android_alarm.h>
+#endif
 #include <linux/thermal.h>
 #include <mach/cpufreq.h>
 #include <mach/rpm-regulator.h>
@@ -1031,6 +1035,15 @@ static struct notifier_block __refdata msm_thermal_cpu_notifier = {
 static void thermal_rtc_setup(void)
 {
 	ktime_t wakeup_time;
+
+#ifdef CONFIG_ANDROID_INTF_ALARM_DEV
+	wakeup_time = ns_to_ktime((u64)wakeup_ms * NSEC_PER_MSEC);
+	alarm_start_relative(&thermal_rtc, wakeup_time);
+	pr_debug("%s: Alarm set to last for %ld.%06ld sec\n",
+			KBUILD_MODNAME,
+			ktime_to_timeval(wakeup_time).tv_sec,
+			ktime_to_timeval(wakeup_time).tv_usec);
+#else
 	ktime_t curr_time;
 
 	curr_time = alarm_get_elapsed_realtime();
@@ -1044,7 +1057,7 @@ static void thermal_rtc_setup(void)
 			ktime_to_timeval(curr_time).tv_usec,
 			ktime_to_timeval(wakeup_time).tv_sec,
 			ktime_to_timeval(wakeup_time).tv_usec);
-
+#endif
 }
 
 static void timer_work_fn(struct work_struct *work)
@@ -1052,6 +1065,20 @@ static void timer_work_fn(struct work_struct *work)
 	sysfs_notify(tt_kobj, NULL, "wakeup_ms");
 }
 
+#ifdef CONFIG_ANDROID_INTF_ALARM_DEV
+static enum alarmtimer_restart thermal_rtc_callback(struct alarm *al,
+	ktime_t now)
+{
+	struct timeval ts;
+	ts = ktime_to_timeval(now);
+
+	schedule_work(&timer_work);
+	pr_debug("%s: Time on alarm expiry: %ld %ld\n", KBUILD_MODNAME,
+			ts.tv_sec, ts.tv_usec);
+
+	return ALARMTIMER_NORESTART;
+}
+#else
 static void thermal_rtc_callback(struct alarm *al)
 {
 	struct timeval ts;
@@ -1060,6 +1087,7 @@ static void thermal_rtc_callback(struct alarm *al)
 	pr_debug("%s: Time on alarm expiry: %ld %ld\n", KBUILD_MODNAME,
 			ts.tv_sec, ts.tv_usec);
 }
+#endif
 
 static int hotplug_notify(enum thermal_trip_type type, int temp, void *data)
 {
@@ -2274,8 +2302,12 @@ int __init msm_thermal_late_init(void)
 		msm_thermal_add_cc_nodes();
 	msm_thermal_add_psm_nodes();
 	msm_thermal_add_vdd_rstr_nodes();
+#ifdef CONFIG_ANDROID_INTF_ALARM_DEV
+	alarm_init(&thermal_rtc, ALARM_BOOTTIME, thermal_rtc_callback);
+#else
 	alarm_init(&thermal_rtc, ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP,
 			thermal_rtc_callback);
+#endif
 	INIT_WORK(&timer_work, timer_work_fn);
 	msm_thermal_add_timer_nodes();
 
