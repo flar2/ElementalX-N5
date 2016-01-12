@@ -79,7 +79,7 @@ static void wakefunc_rtc_start(void)
 	ktime_t wakeup_time;
 	ktime_t curr_time;
 
-	if (!dt2w_switch && !s2w_switch)
+	if (!dt2w_switch && !s2w_switch && !camera_switch)
 		return;
 
 	wakefunc_triggered = false;
