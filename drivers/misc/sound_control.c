@@ -39,6 +39,11 @@ unsigned int mic_boost = 0;
  * Sysfs get/set entries
  */
 
+bool sound_control_enabled(void)
+{
+	return mic_boost || speaker_boost || headset_boost || headphones_boost;
+}
+
 static ssize_t headphones_boost_show(struct device *dev, 
 		struct device_attribute *attr, char *buf)
 {

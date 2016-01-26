@@ -10,9 +10,10 @@
 #ifndef _LINUX_SOUNT_CONTROL_H
 #define _LINUX_SOUNT_CONTROL_H
 
-void update_headphones_volume_boost(int vol_boost);
-void update_headset_boost(int vol_boost);
-void update_speaker_gain(int vol_boost);
-void update_mic_gain(int vol_boost);
+void update_headphones_volume_boost(unsigned int vol_boost);
+void update_headset_boost(unsigned int vol_boost);
+void update_speaker_gain(unsigned int vol_boost);
+void update_mic_gain(unsigned int vol_boost);
+bool sound_control_enabled(void);
 
 #endif
