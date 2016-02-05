@@ -38,7 +38,6 @@
 #include "wcd9320.h"
 #include "wcd9xxx-resmgr.h"
 #include "wcd9xxx-common.h"
-#include <linux/sound_control.h>
 
 struct sound_control {
 	int default_headphones_value;
@@ -4196,7 +4195,7 @@ static int taiko_write(struct snd_soc_codec *codec, unsigned int reg,
 				reg, ret);
 	}
 
-	if (!reg_access(reg) && sound_control_enabled())
+	if (!reg_access(reg))
 		val = wcd9xxx_reg_read(codec->control_data, reg);
 	else
 		val = value;
