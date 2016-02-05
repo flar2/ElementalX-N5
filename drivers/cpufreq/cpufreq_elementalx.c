@@ -822,6 +822,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	static unsigned int phase = 0;
 	static unsigned int counter = 0;
 	unsigned int nr_cpus;
+	unsigned int avg_load = 0;
 
 	this_dbs_info->freq_lo = 0;
 	policy = this_dbs_info->cur_policy;
@@ -886,8 +887,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	} else {
 
+		avg_load = (prev_load + cur_load) >> 1;
+
 		if (max_load_freq > up_threshold_level[1] * policy->cur) {
-			unsigned int avg_load = (prev_load + cur_load) >> 1;
 			int index = get_cpu_freq_index(policy->cur);
 	
 			if (FREQ_NEED_BURST(policy->cur) && cur_load > up_threshold_level[0]) {
@@ -987,6 +989,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 		if (freq_next < policy->min)
 			freq_next = policy->min;
+
+		if (freq_next == policy->min && avg_load > 10)
+			freq_next = policy->min + 130000;
 
 		if (num_online_cpus() > 1) {
 			if (max_load_other_cpu >
