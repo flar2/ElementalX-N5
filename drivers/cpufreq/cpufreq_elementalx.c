@@ -27,10 +27,12 @@
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <linux/average.h>
 
 #include <mach/kgsl.h>
 static int orig_up_threshold = 90;
 static int g_count = 0;
+static struct ewma smooth_load_avg;
 
 #define DEF_SAMPLING_RATE			(30000)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
@@ -113,6 +115,7 @@ static	struct cpufreq_frequency_table *tbl = NULL;
 static unsigned int *tblmap[TABLE_SIZE] __read_mostly;
 static unsigned int tbl_select[4];
 static unsigned int up_threshold_level[2] __read_mostly = {95, 85};
+static unsigned int min_threshold_level[4] __read_mostly = {56, 33, 24, 21};
 static int input_event_counter = 0;
 struct timer_list freq_mode_timer;
 
@@ -822,7 +825,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	static unsigned int phase = 0;
 	static unsigned int counter = 0;
 	unsigned int nr_cpus;
-	unsigned int avg_load = 0;
 
 	this_dbs_info->freq_lo = 0;
 	policy = this_dbs_info->cur_policy;
@@ -835,6 +837,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (cur_load > max_load_freq)
 			max_load_freq = cur_load * policy->cur;
 	}
+
+	ewma_add(&smooth_load_avg, cur_load);
 
 	for_each_online_cpu(j) {
 		struct cpu_dbs_info_s *j_dbs_info;
@@ -887,9 +891,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	} else {
 
-		avg_load = (prev_load + cur_load) >> 1;
-
 		if (max_load_freq > up_threshold_level[1] * policy->cur) {
+			unsigned int avg_load = (prev_load + cur_load) >> 1;
 			int index = get_cpu_freq_index(policy->cur);
 	
 			if (FREQ_NEED_BURST(policy->cur) && cur_load > up_threshold_level[0]) {
@@ -990,7 +993,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (freq_next < policy->min)
 			freq_next = policy->min;
 
-		if (freq_next == policy->min && avg_load > 10)
+		if (FREQ_NEED_BURST(freq_next) &&
+				ewma_read(&smooth_load_avg) > min_threshold_level[num_online_cpus() - 1])
 			freq_next = policy->min + 130000;
 
 		if (num_online_cpus() > 1) {
@@ -1357,6 +1361,8 @@ static int __init cpufreq_gov_dbs_init(void)
 	}
 
 	spin_lock_init(&input_boost_lock);
+
+	ewma_init(&smooth_load_avg, 1024, 32);
 
 	for_each_possible_cpu(i) {
 		pthread = kthread_create_on_node(cpufreq_gov_dbs_up_task,
