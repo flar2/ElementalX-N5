@@ -28,7 +28,8 @@
 extern struct snd_soc_codec *fauxsound_codec_ptr;
 extern int wcd9xxx_hw_revision;
 
-static int snd_ctrl_locked = 2;
+int snd_ctrl_enabled = 0;
+static int snd_ctrl_locked = 0;
 static int snd_rec_ctrl_locked = 0;
 static int actual_pa_gain = 36;
 
@@ -199,6 +200,9 @@ static ssize_t cam_mic_gain_store(struct kobject *kobj,
 
 	sscanf(buf, "%u %u", &lval, &chksum);
 
+	if (!snd_ctrl_enabled)
+		return count;
+
 	snd_ctrl_locked = 0;
 	taiko_write(fauxsound_codec_ptr,
 		TAIKO_A_CDC_TX6_VOL_CTL_GAIN, lval);
@@ -221,6 +225,9 @@ static ssize_t mic_gain_store(struct kobject *kobj,
 	unsigned int lval, chksum;
 
 	sscanf(buf, "%u %u", &lval, &chksum);
+
+	if (!snd_ctrl_enabled)
+		return count;
 
 	snd_ctrl_locked = 0;
 	taiko_write(fauxsound_codec_ptr,
@@ -249,6 +256,9 @@ static ssize_t speaker_gain_store(struct kobject *kobj,
 
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
+	if (!snd_ctrl_enabled)
+		return count;
+
 	snd_ctrl_locked = 0;
 	taiko_write(fauxsound_codec_ptr,
 		TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, lval);
@@ -276,6 +286,9 @@ static ssize_t headphone_gain_store(struct kobject *kobj,
 
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
+	if (!snd_ctrl_enabled)
+		return count;
+
 	snd_ctrl_locked = 0;
 	taiko_write(fauxsound_codec_ptr,
 		TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL, lval);
@@ -301,6 +314,9 @@ static ssize_t headphone_pa_gain_store(struct kobject *kobj,
 	unsigned int out;
 
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
+
+	if (!snd_ctrl_enabled)
+		return count;
 
 	snd_ctrl_locked = 0;
 
@@ -332,6 +348,9 @@ static unsigned int selected_reg = 0xdeadbeef;
 static ssize_t sound_reg_select_store(struct kobject *kobj,
                 struct kobj_attribute *attr, const char *buf, size_t count)
 {
+	if (!snd_ctrl_enabled)
+		return count;
+
         sscanf(buf, "%u", &selected_reg);
 
 	return count;
@@ -350,9 +369,12 @@ static ssize_t sound_reg_read_show(struct kobject *kobj,
 static ssize_t sound_reg_write_store(struct kobject *kobj,
                 struct kobj_attribute *attr, const char *buf, size_t count)
 {
-        unsigned int out, chksum;
+        unsigned int out;
 
-	sscanf(buf, "%u %u", &out, &chksum);
+	sscanf(buf, "%u", &out);
+
+	if (!snd_ctrl_enabled)
+		return count;
 
 	if (selected_reg != 0xdeadbeef)
 		taiko_write(fauxsound_codec_ptr, selected_reg, out);
@@ -390,6 +412,20 @@ static ssize_t sound_control_rec_locked_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
         return sprintf(buf, "%d\n", snd_rec_ctrl_locked);
+}
+
+static ssize_t sound_control_enabled_store(struct kobject *kobj,
+                struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	sscanf(buf, "%d", &snd_ctrl_enabled);
+
+	return count;
+}
+
+static ssize_t sound_control_enabled_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+        return sprintf(buf, "%d\n", snd_ctrl_enabled);
 }
 
 static struct kobj_attribute sound_reg_sel_attribute =
@@ -456,6 +492,12 @@ static struct kobj_attribute sound_hw_revision_attribute =
 		0444,
 		sound_control_hw_revision_show, NULL);
 
+static struct kobj_attribute sound_control_enabled_attribute =
+	__ATTR(gpl_sound_control_enabled,
+		0666,
+		sound_control_enabled_show,
+		sound_control_enabled_store);
+
 static struct attribute *sound_control_attrs[] =
 	{
 		&cam_mic_gain_attribute.attr,
@@ -469,6 +511,7 @@ static struct attribute *sound_control_attrs[] =
 		&sound_reg_write_attribute.attr,
 		&sound_hw_revision_attribute.attr,
 		&sound_control_version_attribute.attr,
+		&sound_control_enabled_attribute.attr,
 		NULL,
 	};
 
