@@ -76,6 +76,7 @@
 /* 1. coding for additional excetion case in probe function */
 /* 2. additional sleep related/excetional case  */
 
+bool headphones_inserted = false;
 
 static struct workqueue_struct *local_max1462x_workqueue;
 
@@ -281,6 +282,7 @@ static void max1462x_insert_headset(struct max1462x_hsd_info *hi)
 	int earjack_type;
 
 	pr_info("%s\n", __func__);
+	headphones_inserted = true;
 
         /* If you reduce the delay time, it will cause problems. */
 	msleep(40);
@@ -338,6 +340,7 @@ static void max1462x_remove_headset(struct max1462x_hsd_info *hi)
 	int earjack_type = JACK_NONE;
 
 	pr_info("%s\n", __func__);
+	headphones_inserted = false;
 
 	if (atomic_read(&hi->is_3_pole_or_not))
 		earjack_type = JACK_HEADPHONE_3_POLE;
