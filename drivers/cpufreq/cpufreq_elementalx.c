@@ -33,6 +33,7 @@
 static int orig_up_threshold = 90;
 static int g_count = 0;
 static struct ewma smooth_load_avg;
+extern bool headphones_inserted;
 
 #define DEF_SAMPLING_RATE			(30000)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
@@ -993,7 +994,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (freq_next < policy->min)
 			freq_next = policy->min;
 
-		if (FREQ_NEED_BURST(freq_next) &&
+		if (headphones_inserted && FREQ_NEED_BURST(freq_next) &&
 				ewma_read(&smooth_load_avg) > min_threshold_level[num_online_cpus() - 1])
 			freq_next = policy->min + 140000;
 
