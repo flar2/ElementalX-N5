@@ -284,7 +284,7 @@ static ssize_t mdss_set_rgb(struct device *dev,
 	if (count > 19)
 		return -EINVAL;
 
-	sscanf(buf, "%d %d %d", &r, &g, &b);
+	sscanf(buf, "%u %u %u", &r, &g, &b);
 
 	if (r < 0 || r > 32768)
 		return -EINVAL;
