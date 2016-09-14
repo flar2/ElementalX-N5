@@ -1781,6 +1781,14 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 	fwu->initialized = true;
 	fwu->force_update = FORCE_UPDATE;
 
+#ifdef INSIDE_FIRMWARE_UPDATE
+	fwu->fwu_workqueue = create_singlethread_workqueue("fwu_workqueue");
+	INIT_DELAYED_WORK(&fwu->fwu_work, synaptics_rmi4_fwu_work);
+	queue_delayed_work(fwu->fwu_workqueue,
+			&fwu->fwu_work,
+			msecs_to_jiffies(1000));
+#endif
+
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE_EXTRA_SYSFS
 	retval = sysfs_create_bin_file(&rmi4_data->input_dev->dev.kobj,
 			&dev_attr_data);
@@ -1803,14 +1811,6 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 			goto exit_remove_attrs;
 		}
 	}
-
-#ifdef INSIDE_FIRMWARE_UPDATE
-	fwu->fwu_workqueue = create_singlethread_workqueue("fwu_workqueue");
-	INIT_DELAYED_WORK(&fwu->fwu_work, synaptics_rmi4_fwu_work);
-	queue_delayed_work(fwu->fwu_workqueue,
-			&fwu->fwu_work,
-			msecs_to_jiffies(1000));
-#endif
 
 	init_completion(&remove_complete);
 
