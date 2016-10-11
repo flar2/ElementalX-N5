@@ -50,7 +50,7 @@ static int32_t msm_led_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 	CDBG("called led_state %d\n", cfg->cfgtype);
 
 	if (!fctrl) {
-		pr_err("failed: fctrl %p\n", fctrl);
+		pr_err("failed: fctrl %pK\n", fctrl);
 		return -EINVAL;
 	}
 

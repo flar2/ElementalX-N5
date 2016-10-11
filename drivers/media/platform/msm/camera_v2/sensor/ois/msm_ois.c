@@ -419,7 +419,7 @@ static long msm_ois_subdev_ioctl(struct v4l2_subdev *sd,
 
 	CDBG("Enter\n");
 
-	CDBG("%s:%d a_ctrl %p argp %p\n", __func__, __LINE__, a_ctrl, argp);
+	CDBG("%s:%d a_ctrl %pK argp %pK\n", __func__, __LINE__, a_ctrl, argp);
 	return -ENOIOCTLCMD;
 }
 

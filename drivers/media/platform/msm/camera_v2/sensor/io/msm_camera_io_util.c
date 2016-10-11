@@ -78,7 +78,7 @@ void msm_camera_io_dump(void __iomem *addr, int size)
 	int i;
 	u32 *p = (u32 *) addr;
 	u32 data;
-	CDBG("%s: %p %d\n", __func__, addr, size);
+	CDBG("%s: %pK %d\n", __func__, addr, size);
 	line_str[0] = '\0';
 	p_str = line_str;
 	for (i = 0; i < size/4; i++) {
@@ -102,7 +102,7 @@ void msm_camera_io_dump(void __iomem *addr, int size)
 void msm_camera_io_memcpy(void __iomem *dest_addr,
 	void __iomem *src_addr, u32 len)
 {
-	CDBG("%s: %p %p %d\n", __func__, dest_addr, src_addr, len);
+	CDBG("%s: %pK %pK %d\n", __func__, dest_addr, src_addr, len);
 	msm_camera_io_memcpy_toio(dest_addr, src_addr, len / 4);
 	msm_camera_io_dump(dest_addr, len);
 }
@@ -539,7 +539,7 @@ int msm_camera_request_gpio_table(struct gpio *gpio_tbl, uint8_t size,
 	int rc = 0, i = 0;
 
 	if (!gpio_tbl || !size) {
-		pr_err("%s:%d invalid gpio_tbl %p / size %d\n", __func__,
+		pr_err("%s:%d invalid gpio_tbl %pK / size %d\n", __func__,
 			__LINE__, gpio_tbl, size);
 		return -EINVAL;
 	}

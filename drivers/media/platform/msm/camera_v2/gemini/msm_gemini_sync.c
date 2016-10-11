@@ -187,7 +187,7 @@ int msm_gemini_framedone_irq(struct msm_gemini_device *pgmn_dev,
 {
 	int rc = 0;
 
-	GMN_DBG("%s:%d] buf_in %p", __func__, __LINE__, buf_in);
+	GMN_DBG("%s:%d] buf_in %pK", __func__, __LINE__, buf_in);
 
 	if (buf_in) {
 		buf_in->vbuf.framedone_len = buf_in->framedone_len;
@@ -711,7 +711,7 @@ int __msm_gemini_open(struct msm_gemini_device *pgmn_dev)
 		return rc;
 	}
 
-	GMN_DBG("%s:%d] platform resources - mem %p, base %p, irq %d\n",
+	GMN_DBG("%s:%d] platform resources - mem %pK, base %pK, irq %d\n",
 		__func__, __LINE__,
 		pgmn_dev->mem, pgmn_dev->base, pgmn_dev->irq);
 

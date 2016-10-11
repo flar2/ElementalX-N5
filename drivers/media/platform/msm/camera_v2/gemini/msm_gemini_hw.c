@@ -491,7 +491,7 @@ void msm_gemini_io_dump(int size)
 	int i;
 	u32 *p = (u32 *) addr;
 	u32 data;
-	pr_info("%s: %p %d reg_size %d\n", __func__, addr, size,
+	pr_info("%s: %pK %d reg_size %d\n", __func__, addr, size,
 							gemini_region_size);
 	line_str[0] = '\0';
 	p_str = line_str;

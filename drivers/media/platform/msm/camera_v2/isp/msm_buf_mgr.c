@@ -128,7 +128,7 @@ static int msm_isp_prepare_v4l2_buf(struct msm_isp_buf_mgr *buf_mgr,
 		ion_import_dma_buf(buf_mgr->client,
 			v4l2_buf->m.planes[i].m.userptr);
 		if (IS_ERR_OR_NULL(mapped_info->handle)) {
-			pr_err("%s: buf has null/error ION handle %p\n",
+			pr_err("%s: buf has null/error ION handle %pK\n",
 				__func__, mapped_info->handle);
 			goto ion_map_error;
 		}
