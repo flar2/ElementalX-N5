@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013,2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -92,7 +92,7 @@ static void ion_iommu_meta_add(struct ion_iommu_meta *meta)
 		} else if (meta->table > entry->table) {
 			p = &(*p)->rb_right;
 		} else {
-			pr_err("%s: handle %p already exists\n", __func__,
+			pr_err("%s: handle %pK already exists\n", __func__,
 				entry->handle);
 			BUG();
 		}
@@ -143,7 +143,7 @@ static void ion_iommu_add(struct ion_iommu_meta *meta,
 		} else if (iommu->key > entry->key) {
 			p = &(*p)->rb_right;
 		} else {
-			pr_err("%s: handle %p already has mapping for domain %d and partition %d\n",
+			pr_err("%s: handle %pK already has mapping for domain %d and partition %d\n",
 				__func__,
 				meta->handle,
 				iommu_map_domain(iommu),
@@ -229,7 +229,7 @@ static int ion_iommu_map_iommu(struct ion_iommu_meta *meta,
 			      table->sgl,
 			      size, prot);
 	if (ret) {
-		pr_err("%s: could not map %lx in domain %p\n",
+		pr_err("%s: could not map %lx in domain %pK\n",
 			__func__, data->iova_addr, domain);
 		goto out1;
 	}
@@ -456,13 +456,13 @@ int ion_map_iommu(struct ion_client *client, struct ion_handle *handle,
 		}
 	} else {
 		if (iommu_map->flags != iommu_flags) {
-			pr_err("%s: handle %p is already mapped with iommu flags %lx, trying to map with flags %lx\n",
+			pr_err("%s: handle %pK is already mapped with iommu flags %lx, trying to map with flags %lx\n",
 				__func__, handle,
 				iommu_map->flags, iommu_flags);
 			ret = -EINVAL;
 			goto out_unlock;
 		} else if (iommu_map->mapped_size != iova_length) {
-			pr_err("%s: handle %p is already mapped with length %x, trying to map with length %lx\n",
+			pr_err("%s: handle %pK is already mapped with length %x, trying to map with length %lx\n",
 				__func__, handle, iommu_map->mapped_size,
 				iova_length);
 			ret = -EINVAL;
@@ -518,7 +518,7 @@ void ion_unmap_iommu(struct ion_client *client, struct ion_handle *handle,
 	mutex_lock(&msm_iommu_map_mutex);
 	meta = ion_iommu_meta_lookup(table);
 	if (!meta) {
-		WARN(1, "%s: (%d,%d) was never mapped for %p\n", __func__,
+		WARN(1, "%s: (%d,%d) was never mapped for %pK\n", __func__,
 				domain_num, partition_num, handle);
 		mutex_unlock(&msm_iommu_map_mutex);
 		goto out;
@@ -530,7 +530,7 @@ void ion_unmap_iommu(struct ion_client *client, struct ion_handle *handle,
 	iommu_map = ion_iommu_lookup(meta, domain_num, partition_num);
 
 	if (!iommu_map) {
-		WARN(1, "%s: (%d,%d) was never mapped for %p\n", __func__,
+		WARN(1, "%s: (%d,%d) was never mapped for %pK\n", __func__,
 				domain_num, partition_num, handle);
 		mutex_unlock(&meta->lock);
 		goto out;

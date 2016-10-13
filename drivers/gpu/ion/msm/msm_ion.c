@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013,2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -897,7 +897,7 @@ static long msm_ion_custom_ioctl(struct ion_client *client,
 
 		if (start && check_vaddr_bounds(start, end)) {
 			up_read(&mm->mmap_sem);
-			pr_err("%s: virtual address %p is out of bounds\n",
+			pr_err("%s: virtual address %pK is out of bounds\n",
 				__func__, data.vaddr);
 			if (!data.handle)
 				ion_free(client, handle);
