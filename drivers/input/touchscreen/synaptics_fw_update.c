@@ -16,7 +16,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+#include <linux/ctype.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -633,7 +633,6 @@ static int fwu_wait_for_idle(int timeout_ms)
 static enum flash_area fwu_go_nogo(struct image_header *header)
 {
 	int retval = 0;
-	int index = 0;
 	int deviceFirmwareID;
 	int imageConfigID;
 	int deviceConfigID;
@@ -687,6 +686,8 @@ static enum flash_area fwu_go_nogo(struct image_header *header)
 			__func__);
 		imageFirmwareID = header->firmware_id;
 	} else {
+		size_t index, max_index;
+
 		strptr = strnstr(fwu->firmware_name, "PR",
 				sizeof(fwu->firmware_name));
 		if (!strptr) {
@@ -696,8 +697,11 @@ static enum flash_area fwu_go_nogo(struct image_header *header)
 			goto exit;
 		}
 
+		max_index = min((ptrdiff_t)(MAX_FIRMWARE_ID_LEN - 1),
+				&fwu->firmware_name[NAME_BUFFER_SIZE] - strptr);
+		index = 0;
 		strptr += 2;
-		while (strptr[index] >= '0' && strptr[index] <= '9') {
+		while (index < max_index && isdigit(strptr[index])) {
 			imagePR[index] = strptr[index];
 			index++;
 		}
