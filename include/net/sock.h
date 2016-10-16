@@ -906,7 +906,6 @@ struct proto {
 	void			(*destroy_cgroup)(struct cgroup *cgrp);
 	struct cg_proto		*(*proto_cgroup)(struct mem_cgroup *memcg);
 #endif
-	int			(*diag_destroy)(struct sock *sk, int err);
 };
 
 struct cg_proto {
