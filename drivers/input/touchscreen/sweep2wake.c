@@ -57,7 +57,7 @@ MODULE_LICENSE("GPLv2");
 /* Tuneables */
 #define S2W_DEBUG		0
 #define S2W_DEFAULT		0
-#define S2W_PWRKEY_DUR          60
+#define S2W_PWRKEY_DUR          100
 
 #ifdef CONFIG_MACH_MSM8974_HAMMERHEAD
 /* Hammerhead aka Nexus 5 */
@@ -78,8 +78,8 @@ MODULE_LICENSE("GPLv2");
 #endif
 
 /* Wake Gestures */
-#define SWEEP_TIMEOUT		30
-#define TRIGGER_TIMEOUT		50
+#define SWEEP_TIMEOUT		90
+#define TRIGGER_TIMEOUT		150
 #define WAKE_GESTURE		0x0b
 #define SWEEP_RIGHT		0x01
 #define SWEEP_LEFT		0x02
