@@ -479,9 +479,9 @@ static ssize_t show_max_screen_off(struct cpufreq_policy *policy, char *buf)
 static ssize_t store_max_screen_off(struct cpufreq_policy *policy,
 		const char *buf, size_t count)
 {
-	if (buf[0] >= '0' && buf[0] <= '1' && buf[1] == '\n')
-            if (maxscroff != buf[0] - '0') 
-		        maxscroff = buf[0] - '0';
+	sscanf(buf, "%d ", &maxscroff);
+	if (maxscroff < 0 || maxscroff > 1)
+		maxscroff = 0;
 
 	return count;
 }
