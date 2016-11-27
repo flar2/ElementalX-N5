@@ -382,9 +382,9 @@ static ssize_t dt2w_doubletap2wake_show(struct device *dev,
 static ssize_t dt2w_doubletap2wake_dump(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	if (buf[0] >= '0' && buf[0] <= '2' && buf[1] == '\n')
-                if (dt2w_switch != buf[0] - '0')
-		        dt2w_switch = buf[0] - '0';
+	sscanf(buf, "%d ", &dt2w_switch);
+	if (dt2w_switch < 0 || dt2w_switch > 2)
+		dt2w_switch = 0;
 
 	if (scr_suspended && !dt2w_switch && !s2w_switch && !camera_switch) {
 		wake_pwrtrigger();
@@ -395,25 +395,6 @@ static ssize_t dt2w_doubletap2wake_dump(struct device *dev,
 
 static DEVICE_ATTR(doubletap2wake, (S_IWUSR|S_IRUGO),
 	dt2w_doubletap2wake_show, dt2w_doubletap2wake_dump);
-
-static ssize_t dt2w_version_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	size_t count = 0;
-
-	count += sprintf(buf, "%s\n", DRIVER_VERSION);
-
-	return count;
-}
-
-static ssize_t dt2w_version_dump(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	return count;
-}
-
-static DEVICE_ATTR(doubletap2wake_version, (S_IWUSR|S_IRUGO),
-	dt2w_version_show, dt2w_version_dump);
 
 /*
  * INIT / EXIT stuff below here
@@ -474,10 +455,6 @@ static int __init doubletap2wake_init(void)
 	rc = sysfs_create_file(android_touch_kobj, &dev_attr_doubletap2wake.attr);
 	if (rc) {
 		pr_warn("%s: sysfs_create_file failed for doubletap2wake\n", __func__);
-	}
-	rc = sysfs_create_file(android_touch_kobj, &dev_attr_doubletap2wake_version.attr);
-	if (rc) {
-		pr_warn("%s: sysfs_create_file failed for doubletap2wake_version\n", __func__);
 	}
 
 err_input_dev:
