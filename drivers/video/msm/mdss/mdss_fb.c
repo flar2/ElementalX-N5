@@ -56,6 +56,7 @@
 #endif
 
 #include "mdss_fb.h"
+#include "mdss_mdp.h"
 
 #ifdef CONFIG_LGE_HANDLE_PANIC
 #include <mach/lge_handle_panic.h>
@@ -254,12 +255,48 @@ static ssize_t mdss_fb_get_split(struct device *dev,
 	return ret;
 }
 
+static ssize_t mdss_get_rgb(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct kcal_lut_data lut_data = kcal_ext_show_values();
+
+	return sprintf(buf, "%d %d %d\n", lut_data.red * 128,
+						 lut_data.green * 128,
+						 lut_data.blue * 128);
+}
+
+static ssize_t mdss_set_rgb(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	uint32_t r = 0, g = 0, b = 0;
+
+	if (count > 19)
+		return -EINVAL;
+
+	sscanf(buf, "%d %d %d", &r, &g, &b);
+
+	if (r < 0 || r > 32768)
+		return -EINVAL;
+	if (g < 0 || g > 32768)
+		return -EINVAL;
+	if (b < 0 || b > 32768)
+		return -EINVAL;
+
+	kcal_ext_apply_values(r, g, b);
+
+	return count;
+}
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, mdss_fb_get_type, NULL);
 static DEVICE_ATTR(msm_fb_split, S_IRUGO, mdss_fb_get_split, NULL);
+static DEVICE_ATTR(rgb, S_IRUGO | S_IWUSR | S_IWGRP, mdss_get_rgb,
+	mdss_set_rgb);
 
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
 	&dev_attr_msm_fb_split.attr,
+	&dev_attr_rgb.attr,
 	NULL,
 };
 
