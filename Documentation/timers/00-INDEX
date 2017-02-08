@@ -8,5 +8,3 @@ hpet_example.c
 	- sample hpet timer test program
 hrtimers.txt
 	- subsystem for high-resolution kernel timers
-timer_stats.txt
-	- timer usage statistics
