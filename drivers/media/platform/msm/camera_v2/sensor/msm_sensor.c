@@ -1965,7 +1965,7 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev, void *data)
 	uint32_t session_id;
 	s_ctrl->pdev = pdev;
 	s_ctrl->dev = &pdev->dev;
-	CDBG("%s called data %p\n", __func__, data);
+	CDBG("%s called data %pK\n", __func__, data);
 	CDBG("%s pdev name %s\n", __func__, pdev->id_entry->name);
 	if (pdev->dev.of_node) {
 		rc = msm_sensor_get_dt_data(pdev->dev.of_node, s_ctrl);

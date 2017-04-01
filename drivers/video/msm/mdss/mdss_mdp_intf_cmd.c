@@ -434,7 +434,7 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 		need_wait = 1;
 	spin_unlock_irqrestore(&ctx->clk_lock, flags);
 
-	pr_debug("%s: need_wait=%d  intf_num=%d ctx=%p\n",
+	pr_debug("%s: need_wait=%d  intf_num=%d ctx=%pK\n",
 			__func__, need_wait, ctl->intf_num, ctx);
 
 	if (need_wait) {
@@ -605,7 +605,7 @@ int mdss_mdp_cmd_start(struct mdss_mdp_ctl *ctl)
 	atomic_set(&ctx->pp_done_cnt, 0);
 	INIT_LIST_HEAD(&ctx->vsync_handlers);
 
-	pr_debug("%s: ctx=%p num=%d mixer=%d\n", __func__,
+	pr_debug("%s: ctx=%pK num=%d mixer=%d\n", __func__,
 				ctx, ctx->pp_num, mixer->num);
 
 	mdss_mdp_set_intr_callback(MDSS_MDP_IRQ_PING_PONG_RD_PTR, ctx->pp_num,

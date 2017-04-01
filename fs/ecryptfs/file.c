@@ -151,6 +151,15 @@ static const struct vm_operations_struct ecryptfs_file_vm_ops = {
 static int ecryptfs_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int rc;
+	struct file *lower_file = ecryptfs_file_to_lower(file);
+
+	/*
+	 * Don't allow mmap on top of file systems that don't support it
+	 * natively.  If FILESYSTEM_MAX_STACK_DEPTH > 2 or ecryptfs
+	 * allows recursive mounting, this will need to be extended.
+	 */
+	if (!lower_file->f_op->mmap)
+		return -ENODEV;
 
 	rc = generic_file_mmap(file, vma);
 	if (!rc)
