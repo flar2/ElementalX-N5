@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011 Google, Inc
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2013,2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -178,11 +178,11 @@ static int __ion_cp_protect_buffer(struct ion_buffer *buffer, int version,
 				version, data);
 
 		if (ret_value) {
-			pr_err("Failed to secure buffer %p, error %d\n",
+			pr_err("Failed to secure buffer %pK, error %d\n",
 				buffer, ret_value);
 			atomic_dec(&buf->secure_cnt);
 		} else {
-			pr_debug("Protected buffer %p from %pa (size %x)\n",
+			pr_debug("Protected buffer %pK from %pa (size %x)\n",
 				buffer, &buf->buffer,
 				buffer->size);
 			buf->want_delayed_unsecure |=
@@ -191,7 +191,7 @@ static int __ion_cp_protect_buffer(struct ion_buffer *buffer, int version,
 			buf->version = version;
 		}
 	}
-	pr_debug("buffer %p protect count %d\n", buffer,
+	pr_debug("buffer %pK protect count %d\n", buffer,
 		atomic_read(&buf->secure_cnt));
 	BUG_ON(atomic_read(&buf->secure_cnt) < 0);
 	return ret_value;
@@ -221,7 +221,7 @@ static int __ion_cp_unprotect_buffer(struct ion_buffer *buffer, int version,
 			0, version, data);
 
 		if (ret_value) {
-			pr_err("Failed to unsecure buffer %p, error %d\n",
+			pr_err("Failed to unsecure buffer %pK, error %d\n",
 				buffer, ret_value);
 			/*
 			 * If the force unsecure is happening, the buffer
@@ -239,7 +239,7 @@ static int __ion_cp_unprotect_buffer(struct ion_buffer *buffer, int version,
 			buf->data = NULL;
 		}
 	}
-	pr_debug("buffer %p unprotect count %d\n", buffer,
+	pr_debug("buffer %pK unprotect count %d\n", buffer,
 		atomic_read(&buf->secure_cnt));
 	BUG_ON(atomic_read(&buf->secure_cnt) < 0);
 	return ret_value;
@@ -253,21 +253,21 @@ int ion_cp_secure_buffer(struct ion_buffer *buffer, int version, void *data,
 
 	mutex_lock(&buf->lock);
 	if (!buf->is_secure) {
-		pr_err("%s: buffer %p was not allocated as secure\n",
+		pr_err("%s: buffer %pK was not allocated as secure\n",
 			__func__, buffer);
 		ret_value = -EINVAL;
 		goto out_unlock;
 	}
 
 	if (ION_IS_CACHED(buffer->flags)) {
-		pr_err("%s: buffer %p was allocated as cached\n",
+		pr_err("%s: buffer %pK was allocated as cached\n",
 			__func__, buffer);
 		ret_value = -EINVAL;
 		goto out_unlock;
 	}
 
 	if (atomic_read(&buf->map_cnt)) {
-		pr_err("%s: cannot secure buffer %p with outstanding mappings. Total count: %d",
+		pr_err("%s: cannot secure buffer %pK with outstanding mappings. Total count: %d",
 			__func__, buffer, atomic_read(&buf->map_cnt));
 		ret_value = -EINVAL;
 		goto out_unlock;
@@ -279,7 +279,7 @@ int ion_cp_secure_buffer(struct ion_buffer *buffer, int version, void *data,
 				__func__);
 			pr_err("Last secured version: %d Currrent %d\n",
 				buf->version, version);
-			pr_err("Last secured data: %p current %p\n",
+			pr_err("Last secured data: %pK current %pK\n",
 				buf->data, data);
 			ret_value = -EINVAL;
 			goto out_unlock;
