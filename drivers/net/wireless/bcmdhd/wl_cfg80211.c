@@ -1016,7 +1016,7 @@ wl_validate_wps_ie(char *wps_ie, s32 wps_ie_len, bool *pbc)
 			WL_DBG(("  attr WPS_ID_CONFIG_METHODS: %x\n", HTON16(val)));
 		} else if (subelt_id == WPS_ID_DEVICE_NAME) {
 			char devname[100];
-			size_t namelen = MIN(subelt_len, sizeof(devname));
+			//size_t namelen = MIN(subelt_len, sizeof(devname));
 			if (namelen) {
 				memcpy(devname, subel, namelen);
 				devname[namelen - 1] = '\0';
@@ -1825,8 +1825,7 @@ static void wl_scan_prep(struct wl_scan_params *params, struct cfg80211_scan_req
 
 		for (i = 0; i < n_ssids; i++) {
 			memset(&ssid, 0, sizeof(wlc_ssid_t));
-			ssid.SSID_len = MIN(request->ssids[i].ssid_len,
-					    DOT11_MAX_SSID_LEN);
+			ssid.SSID_len = request->ssids[i].ssid_len;
 			memcpy(ssid.SSID, request->ssids[i].ssid, ssid.SSID_len);
 			if (!ssid.SSID_len)
 				WL_SCAN(("%d: Broadcast scan\n", i));
@@ -2732,7 +2731,7 @@ wl_cfg80211_join_ibss(struct wiphy *wiphy, struct net_device *dev,
 	RETURN_EIO_IF_NOT_UP(wl);
 	WL_INFO(("JOIN BSSID:" MACDBG "\n", MAC2STRDBG(params->bssid)));
 
-	if (!params->ssid || params->ssid_len <= 0 || params->ssid_len > DOT11_MAX_SSID_LEN) {
+	if (!params->ssid || params->ssid_len <= 0) {
 		WL_ERR(("Invalid parameter\n"));
 		return -EINVAL;
 	}
@@ -5316,6 +5315,8 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	} else if (chan->band == IEEE80211_BAND_2GHZ)
 		bw = WL_CHANSPEC_BW_20;
 set_channel:
+	//NexMon: force channel with to 40 (only works for 5 GHz for now)
+	//bw = WL_CHANSPEC_BW_40;
 	chspec = wf_channel2chspec(_chan, bw);
 	if (wf_chspec_valid(chspec)) {
 		fw_chspec = wl_chspec_host_to_driver(chspec);
@@ -5751,16 +5752,17 @@ static s32 wl_cfg80211_bcn_set_params(
 		}
 	}
 
-	if ((info->ssid) && (info->ssid_len > 0) && (info->ssid_len <= DOT11_MAX_SSID_LEN)) {
+	if ((info->ssid) && (info->ssid_len > 0) &&
+		(info->ssid_len <= 32)) {
 		WL_DBG(("SSID (%s) len:%d \n", info->ssid, info->ssid_len));
 		if (dev_role == NL80211_IFTYPE_AP) {
 			/* Store the hostapd SSID */
-			memset(wl->hostapd_ssid.SSID, 0x00, DOT11_MAX_SSID_LEN);
+			memset(wl->hostapd_ssid.SSID, 0x00, 32);
 			memcpy(wl->hostapd_ssid.SSID, info->ssid, info->ssid_len);
 			wl->hostapd_ssid.SSID_len = info->ssid_len;
 		} else {
 			/* P2P GO */
-			memset(wl->p2p->ssid.SSID, 0x00, DOT11_MAX_SSID_LEN);
+			memset(wl->p2p->ssid.SSID, 0x00, 32);
 			memcpy(wl->p2p->ssid.SSID, info->ssid, info->ssid_len);
 			wl->p2p->ssid.SSID_len = info->ssid_len;
 		}
@@ -8937,7 +8939,7 @@ wl_cfg80211_netdev_notifier_call(struct notifier_block * nb,
 					break;
 				}
 				set_current_state(TASK_INTERRUPTIBLE);
-				schedule_timeout(HZ);
+				schedule_timeout(100);
 				set_current_state(TASK_RUNNING);
 				refcnt++;
 			}

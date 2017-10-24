@@ -1217,12 +1217,9 @@ static bool nl80211_can_set_dev_channel(struct wireless_dev *wdev)
 	 * whatever else is going on, so they behave as though
 	 * you tried setting the wiphy channel itself.
 	 */
-	return !wdev ||
-		wdev->iftype == NL80211_IFTYPE_AP ||
-		wdev->iftype == NL80211_IFTYPE_WDS ||
-		wdev->iftype == NL80211_IFTYPE_MESH_POINT ||
-		wdev->iftype == NL80211_IFTYPE_MONITOR ||
-		wdev->iftype == NL80211_IFTYPE_P2P_GO;
+
+    //NexMon: disable this check
+    return true;
 }
 
 static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
@@ -1346,6 +1343,9 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		wdev = netdev->ieee80211_ptr;
 	else
 		wdev = NULL;
+
+    //NexMon: set wdev
+    wdev = netdev->ieee80211_ptr;
 
 	/*
 	 * end workaround code, by now the rdev is available
