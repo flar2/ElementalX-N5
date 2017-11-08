@@ -3,6 +3,7 @@
  * Copyright 2005-2006, Devicescape Software, Inc.
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2007-2008	Johannes Berg <johannes@sipsolutions.net>
+ * Copyright 2015-2017	Intel Deutschland GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/export.h>
 #include <net/mac80211.h>
+#include <crypto/algapi.h>
 #include <asm/unaligned.h>
 #include "ieee80211_i.h"
 #include "driver-ops.h"
@@ -413,6 +415,15 @@ struct ieee80211_key *ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 	return key;
 }
 
+static void ieee80211_key_free_common(struct ieee80211_key *key)
+{
+	if (key->conf.cipher == WLAN_CIPHER_SUITE_CCMP)
+		ieee80211_aes_key_free(key->u.ccmp.tfm);
+	if (key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC)
+		ieee80211_aes_cmac_key_free(key->u.aes_cmac.tfm);
+	kfree(key);
+}
+
 static void __ieee80211_key_destroy(struct ieee80211_key *key)
 {
 	if (!key)
@@ -427,16 +438,18 @@ static void __ieee80211_key_destroy(struct ieee80211_key *key)
 	if (key->local)
 		ieee80211_key_disable_hw_accel(key);
 
-	if (key->conf.cipher == WLAN_CIPHER_SUITE_CCMP)
-		ieee80211_aes_key_free(key->u.ccmp.tfm);
-	if (key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC)
-		ieee80211_aes_cmac_key_free(key->u.aes_cmac.tfm);
 	if (key->local) {
 		ieee80211_debugfs_key_remove(key);
 		key->sdata->crypto_tx_tailroom_needed_cnt--;
 	}
 
-	kfree(key);
+	ieee80211_key_free_common(key);
+}
+
+void ieee80211_key_free_unused(struct ieee80211_key *key)
+{
+	WARN_ON(key->sdata || key->local);
+	ieee80211_key_free_common(key);
 }
 
 int ieee80211_key_link(struct ieee80211_key *key,
@@ -452,9 +465,6 @@ int ieee80211_key_link(struct ieee80211_key *key,
 
 	pairwise = key->conf.flags & IEEE80211_KEY_FLAG_PAIRWISE;
 	idx = key->conf.keyidx;
-	key->local = sdata->local;
-	key->sdata = sdata;
-	key->sta = sta;
 
 	if (sta) {
 		/*
@@ -491,6 +501,21 @@ int ieee80211_key_link(struct ieee80211_key *key,
 	else
 		old_key = key_mtx_dereference(sdata->local, sdata->keys[idx]);
 
+	/*
+	 * Silently accept key re-installation without really installing the
+	 * new version of the key to avoid nonce reuse or replay issues.
+	 */
+	if (old_key && key->conf.keylen == old_key->conf.keylen &&
+	    !crypto_memneq(key->conf.key, old_key->conf.key, key->conf.keylen)) {
+		ieee80211_key_free_unused(key);
+		ret = 0;
+		goto out;
+	}
+
+	key->local = sdata->local;
+	key->sdata = sdata;
+	key->sta = sta;
+
 	increment_tailroom_need_count(sdata);
 
 	__ieee80211_key_replace(sdata, sta, pairwise, old_key, key);
@@ -500,6 +525,10 @@ int ieee80211_key_link(struct ieee80211_key *key,
 
 	ret = ieee80211_key_enable_hw_accel(key);
 
+	if (ret)
+		__ieee80211_key_free(key);
+
+ out:
 	mutex_unlock(&sdata->local->key_mtx);
 
 	return ret;
@@ -518,14 +547,6 @@ void __ieee80211_key_free(struct ieee80211_key *key)
 				key->conf.flags & IEEE80211_KEY_FLAG_PAIRWISE,
 				key, NULL);
 	__ieee80211_key_destroy(key);
-}
-
-void ieee80211_key_free(struct ieee80211_local *local,
-			struct ieee80211_key *key)
-{
-	mutex_lock(&local->key_mtx);
-	__ieee80211_key_free(key);
-	mutex_unlock(&local->key_mtx);
 }
 
 void ieee80211_enable_keys(struct ieee80211_sub_if_data *sdata)

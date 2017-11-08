@@ -1544,6 +1544,7 @@ static int snd_timer_user_tselect(struct file *file,
 	if (err < 0)
 		goto __err;
 
+	tu->qhead = tu->qtail = tu->qused = 0;
 	kfree(tu->queue);
 	tu->queue = NULL;
 	kfree(tu->tqueue);
@@ -1864,10 +1865,12 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 {
 	struct snd_timer_user *tu;
 	long result = 0, unit;
+	int qhead;
 	int err = 0;
 
 	tu = file->private_data;
 	unit = tu->tread ? sizeof(struct snd_timer_tread) : sizeof(struct snd_timer_read);
+	mutex_lock(&tu->ioctl_lock);
 	spin_lock_irq(&tu->qlock);
 	while ((long)count - result >= unit) {
 		while (!tu->qused) {
@@ -1875,7 +1878,7 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 
 			if ((file->f_flags & O_NONBLOCK) != 0 || result > 0) {
 				err = -EAGAIN;
-				break;
+				goto _error;
 			}
 
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -1883,45 +1886,43 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 			add_wait_queue(&tu->qchange_sleep, &wait);
 
 			spin_unlock_irq(&tu->qlock);
+			mutex_unlock(&tu->ioctl_lock);
 			schedule();
+			mutex_lock(&tu->ioctl_lock);
 			spin_lock_irq(&tu->qlock);
 
 			remove_wait_queue(&tu->qchange_sleep, &wait);
 
 			if (signal_pending(current)) {
 				err = -ERESTARTSYS;
-				break;
+				goto _error;
 			}
 		}
 
+		qhead = tu->qhead++;
+		tu->qhead %= tu->queue_size;
+		tu->qused--;
 		spin_unlock_irq(&tu->qlock);
-		if (err < 0)
-			goto _error;
 
 		if (tu->tread) {
-			if (copy_to_user(buffer, &tu->tqueue[tu->qhead++],
-					 sizeof(struct snd_timer_tread))) {
+			if (copy_to_user(buffer, &tu->tqueue[qhead],
+					 sizeof(struct snd_timer_tread)))
 				err = -EFAULT;
-				goto _error;
-			}
 		} else {
-			if (copy_to_user(buffer, &tu->queue[tu->qhead++],
-					 sizeof(struct snd_timer_read))) {
+			if (copy_to_user(buffer, &tu->queue[qhead],
+					 sizeof(struct snd_timer_read)))
 				err = -EFAULT;
-				goto _error;
-			}
 		}
 
-		tu->qhead %= tu->queue_size;
-
+		spin_lock_irq(&tu->qlock);
+		if (err < 0)
+			goto _error;
 		result += unit;
 		buffer += unit;
-
-		spin_lock_irq(&tu->qlock);
-		tu->qused--;
 	}
-	spin_unlock_irq(&tu->qlock);
  _error:
+	spin_unlock_irq(&tu->qlock);
+	mutex_unlock(&tu->ioctl_lock);
 	return result > 0 ? result : err;
 }
 
