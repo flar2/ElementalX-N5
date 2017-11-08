@@ -152,7 +152,7 @@ static struct workqueue_struct *gserial_wq;
 	pr_debug(fmt, ##arg)
 #endif /* pr_vdebug */
 #else
-#ifndef pr_vdebug
+#ifndef pr_vdebig
 #define pr_vdebug(fmt, arg...) \
 	({ if (0) pr_debug(fmt, ##arg); })
 #endif /* pr_vdebug */
