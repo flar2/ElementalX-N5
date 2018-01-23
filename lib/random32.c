@@ -38,17 +38,18 @@
 #include <linux/export.h>
 #include <linux/jiffies.h>
 #include <linux/random.h>
+#include <linux/timer.h>
 
 static DEFINE_PER_CPU(struct rnd_state, net_rand_state);
 
 /**
- *	prandom32 - seeded pseudo-random number generator.
+ *	prandom_u32_state - seeded pseudo-random number generator.
  *	@state: pointer to state structure holding seeded state.
  *
  *	This is used for pseudo-randomness with no outside seeding.
- *	For more random results, use random32().
+ *	For more random results, use prandom_u32().
  */
-u32 prandom32(struct rnd_state *state)
+u32 prandom_u32_state(struct rnd_state *state)
 {
 #define TAUSWORTHE(s,a,b,c,d) ((s&c)<<d) ^ (((s <<a) ^ s)>>b)
 
@@ -58,32 +59,81 @@ u32 prandom32(struct rnd_state *state)
 
 	return (state->s1 ^ state->s2 ^ state->s3);
 }
-EXPORT_SYMBOL(prandom32);
+EXPORT_SYMBOL(prandom_u32_state);
 
 /**
- *	random32 - pseudo random number generator
+ *	prandom_u32 - pseudo random number generator
  *
  *	A 32 bit pseudo-random number is generated using a fast
  *	algorithm suitable for simulation. This algorithm is NOT
  *	considered safe for cryptographic use.
  */
-u32 random32(void)
+u32 prandom_u32(void)
 {
 	unsigned long r;
 	struct rnd_state *state = &get_cpu_var(net_rand_state);
-	r = prandom32(state);
+	r = prandom_u32_state(state);
 	put_cpu_var(state);
 	return r;
 }
-EXPORT_SYMBOL(random32);
+EXPORT_SYMBOL(prandom_u32);
+
+/*
+ *	prandom_bytes_state - get the requested number of pseudo-random bytes
+ *
+ *	@state: pointer to state structure holding seeded state.
+ *	@buf: where to copy the pseudo-random bytes to
+ *	@bytes: the requested number of bytes
+ *
+ *	This is used for pseudo-randomness with no outside seeding.
+ *	For more random results, use prandom_bytes().
+ */
+void prandom_bytes_state(struct rnd_state *state, void *buf, int bytes)
+{
+	unsigned char *p = buf;
+	int i;
+
+	for (i = 0; i < round_down(bytes, sizeof(u32)); i += sizeof(u32)) {
+		u32 random = prandom_u32_state(state);
+		int j;
+
+		for (j = 0; j < sizeof(u32); j++) {
+			p[i + j] = random;
+			random >>= BITS_PER_BYTE;
+		}
+	}
+	if (i < bytes) {
+		u32 random = prandom_u32_state(state);
+
+		for (; i < bytes; i++) {
+			p[i] = random;
+			random >>= BITS_PER_BYTE;
+		}
+	}
+}
+EXPORT_SYMBOL(prandom_bytes_state);
 
 /**
- *	srandom32 - add entropy to pseudo random number generator
+ *	prandom_bytes - get the requested number of pseudo-random bytes
+ *	@buf: where to copy the pseudo-random bytes to
+ *	@bytes: the requested number of bytes
+ */
+void prandom_bytes(void *buf, int bytes)
+{
+	struct rnd_state *state = &get_cpu_var(net_rand_state);
+
+	prandom_bytes_state(state, buf, bytes);
+	put_cpu_var(state);
+}
+EXPORT_SYMBOL(prandom_bytes);
+
+/**
+ *	prandom_seed - add entropy to pseudo random number generator
  *	@seed: seed value
  *
- *	Add some additional seeding to the random32() pool.
+ *	Add some additional seeding to the prandom pool.
  */
-void srandom32(u32 entropy)
+void prandom_seed(u32 entropy)
 {
 	int i;
 	/*
@@ -92,16 +142,17 @@ void srandom32(u32 entropy)
 	 */
 	for_each_possible_cpu (i) {
 		struct rnd_state *state = &per_cpu(net_rand_state, i);
-		state->s1 = __seed(state->s1 ^ entropy, 1);
+		state->s1 = __seed(state->s1 ^ entropy, 2);
+		prandom_u32_state(state);
 	}
 }
-EXPORT_SYMBOL(srandom32);
+EXPORT_SYMBOL(prandom_seed);
 
 /*
  *	Generate some initially weak seeding values to allow
- *	to start the random32() engine.
+ *	to start the prandom_u32() engine.
  */
-static int __init random32_init(void)
+static int __init prandom_init(void)
 {
 	int i;
 
@@ -109,42 +160,85 @@ static int __init random32_init(void)
 		struct rnd_state *state = &per_cpu(net_rand_state,i);
 
 #define LCG(x)	((x) * 69069)	/* super-duper LCG */
-		state->s1 = __seed(LCG(i + jiffies), 1);
-		state->s2 = __seed(LCG(state->s1), 7);
-		state->s3 = __seed(LCG(state->s2), 15);
+		state->s1 = __seed(LCG(i + jiffies), 2);
+		state->s2 = __seed(LCG(state->s1), 8);
+		state->s3 = __seed(LCG(state->s2), 16);
 
 		/* "warm it up" */
-		prandom32(state);
-		prandom32(state);
-		prandom32(state);
-		prandom32(state);
-		prandom32(state);
-		prandom32(state);
+		prandom_u32_state(state);
+		prandom_u32_state(state);
+		prandom_u32_state(state);
+		prandom_u32_state(state);
+		prandom_u32_state(state);
+		prandom_u32_state(state);
 	}
 	return 0;
 }
-core_initcall(random32_init);
+core_initcall(prandom_init);
+
+static void __prandom_timer(unsigned long dontcare);
+static DEFINE_TIMER(seed_timer, __prandom_timer, 0, 0);
+
+static void __prandom_timer(unsigned long dontcare)
+{
+	u32 entropy;
+
+	get_random_bytes(&entropy, sizeof(entropy));
+	prandom_seed(entropy);
+	/* reseed every ~60 seconds, in [40 .. 80) interval with slack */
+	seed_timer.expires = jiffies + (40 * HZ + (prandom_u32() % (40 * HZ)));
+	add_timer(&seed_timer);
+}
+
+static void prandom_start_seed_timer(void)
+{
+	set_timer_slack(&seed_timer, HZ);
+	seed_timer.expires = jiffies + 40 * HZ;
+	add_timer(&seed_timer);
+}
 
 /*
  *	Generate better values after random number generator
  *	is fully initialized.
  */
-static int __init random32_reseed(void)
+static void __prandom_reseed(bool late)
 {
 	int i;
+	unsigned long flags;
+	static bool latch = false;
+	static DEFINE_SPINLOCK(lock);
+
+	/* only allow initial seeding (late == false) once */
+	spin_lock_irqsave(&lock, flags);
+	if (latch && !late)
+		goto out;
+	latch = true;
 
 	for_each_possible_cpu(i) {
 		struct rnd_state *state = &per_cpu(net_rand_state,i);
 		u32 seeds[3];
 
 		get_random_bytes(&seeds, sizeof(seeds));
-		state->s1 = __seed(seeds[0], 1);
-		state->s2 = __seed(seeds[1], 7);
-		state->s3 = __seed(seeds[2], 15);
+		state->s1 = __seed(seeds[0], 2);
+		state->s2 = __seed(seeds[1], 8);
+		state->s3 = __seed(seeds[2], 16);
 
 		/* mix it in */
-		prandom32(state);
+		prandom_u32_state(state);
 	}
+out:
+	spin_unlock_irqrestore(&lock, flags);
+}
+
+void prandom_reseed_late(void)
+{
+	__prandom_reseed(true);
+}
+
+static int __init prandom_reseed(void)
+{
+	__prandom_reseed(false);
+	prandom_start_seed_timer();
 	return 0;
 }
-late_initcall(random32_reseed);
+late_initcall(prandom_reseed);

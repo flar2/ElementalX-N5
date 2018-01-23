@@ -135,6 +135,7 @@ struct cred {
 	kernel_cap_t	cap_permitted;	/* caps we're permitted */
 	kernel_cap_t	cap_effective;	/* caps we can actually use */
 	kernel_cap_t	cap_bset;	/* capability bounding set */
+	kernel_cap_t	cap_ambient;	/* Ambient capability set */
 #ifdef CONFIG_KEYS
 	unsigned char	jit_keyring;	/* default keyring to attach requested
 					 * keys to */
@@ -146,7 +147,7 @@ struct cred {
 	void		*security;	/* subjective LSM security */
 #endif
 	struct user_struct *user;	/* real user ID subscription */
-	struct user_namespace *user_ns; /* cached user->user_ns */
+	struct user_namespace *user_ns; /* user_ns the caps and keyrings are relative to. */
 	struct group_info *group_info;	/* supplementary groups for euid/fsgid */
 	struct rcu_head	rcu;		/* RCU deletion hook */
 };
@@ -208,6 +209,13 @@ static inline void validate_process_creds(void)
 {
 }
 #endif
+
+static inline bool cap_ambient_invariant_ok(const struct cred *cred)
+{
+	return cap_issubset(cred->cap_ambient,
+			    cap_intersect(cred->cap_permitted,
+					  cred->cap_inheritable));
+}
 
 /**
  * get_new_cred - Get a reference on a new set of credentials

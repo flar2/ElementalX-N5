@@ -30,7 +30,8 @@ static inline struct bfq_io_cq *icq_to_bic(struct io_cq *icq)
 static inline struct bfq_io_cq *bfq_bic_lookup(struct bfq_data *bfqd,
 					       struct io_context *ioc)
 {
-	if(ioc)
+	if (ioc)
 		return icq_to_bic(ioc_lookup_icq(ioc, bfqd->queue));
 	return NULL;
 }
+

@@ -207,7 +207,7 @@ static inline int ip_finish_output2(struct sk_buff *skb)
 	rcu_read_lock();
 	neigh = dst_get_neighbour_noref(dst);
 	if (neigh) {
-		int res = neigh_output(neigh, skb);
+		int res = dst_neigh_output(dst, neigh, skb);
 
 		rcu_read_unlock();
 		return res;
@@ -1506,8 +1506,7 @@ void ip_send_reply(struct sock *sk, struct sk_buff *skb, __be32 daddr,
 			   RT_SCOPE_UNIVERSE, sk->sk_protocol,
 			   ip_reply_arg_flowi_flags(arg),
 			   daddr, rt->rt_spec_dst,
-			   tcp_hdr(skb)->source, tcp_hdr(skb)->dest,
-			   arg->uid);
+			   tcp_hdr(skb)->source, tcp_hdr(skb)->dest);
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
 	rt = ip_route_output_key(sock_net(sk), &fl4);
 	if (IS_ERR(rt))
