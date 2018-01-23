@@ -17,22 +17,21 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/lcd_notify.h>
-#include <linux/android_alarm.h>
 #include <linux/qpnp/power-on.h>
 #include <linux/input.h>
 #include <linux/delay.h>
 #include <linux/sysfs.h>
 #include <linux/init.h>
-
 #include <linux/input/sweep2wake.h>
 #include <linux/input/doubletap2wake.h>
+#include <linux/alarmtimer.h>
 
 #ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
 #define ANDROID_TOUCH_DECLARED
 #endif
 
 #define WAKE_TIMEOUT_MAJOR_VERSION	1
-#define WAKE_TIMEOUT_MINOR_VERSION	0
+#define WAKE_TIMEOUT_MINOR_VERSION	1
 #define WAKEFUNC "wakefunc"
 #define PWRKEY_DUR		60
 
@@ -42,7 +41,6 @@ struct notifier_block wfnotif;
 static long long wake_timeout = 0;
 static struct alarm wakefunc_rtc;
 static bool wakefunc_triggered = false;
-
 
 static void wake_presspwr(struct work_struct * wake_presspwr_work) {
 	if (!mutex_trylock(&pwrkeyworklock))
@@ -55,13 +53,15 @@ static void wake_presspwr(struct work_struct * wake_presspwr_work) {
 
 	msleep(PWRKEY_DUR * 16);
 	wakefunc_triggered = true;
-	pwrkey_pressed = true;
 
 	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(wake_pwrdev, EV_SYN, 0, 0);
 	msleep(PWRKEY_DUR);
 	input_event(wake_pwrdev, EV_KEY, KEY_POWER, 0);
 	input_event(wake_pwrdev, EV_SYN, 0, 0);
+
+	pwrkey_pressed = true;
+
 	msleep(PWRKEY_DUR);
         mutex_unlock(&pwrkeyworklock);
 	
@@ -71,29 +71,28 @@ static DECLARE_WORK(wake_presspwr_work, wake_presspwr);
 
 void wake_pwrtrigger(void) {
 	schedule_work(&wake_presspwr_work);
-        return;
+	return;
 }
 
 static void wakefunc_rtc_start(void)
 {
 	ktime_t wakeup_time;
-	ktime_t curr_time;
+	ktime_t curr_time = { .tv64 = 0 };
 
 	if (!dt2w_switch && !s2w_switch && !camera_switch)
 		return;
 
 	wakefunc_triggered = false;
-	curr_time = alarm_get_elapsed_realtime();
 	wakeup_time = ktime_add_us(curr_time,
 			(wake_timeout * 1000LL * 60000LL));
-	alarm_start_range(&wakefunc_rtc, wakeup_time,
-			wakeup_time);
-	pr_info("%s: Current Time: %ld, Alarm set to: %ld\n",
+	alarm_start_relative(&wakefunc_rtc, wakeup_time);
+
+	pr_debug("%s: Current Time: %ld, Alarm set to: %ld\n",
 			WAKEFUNC,
 			ktime_to_timeval(curr_time).tv_sec,
 			ktime_to_timeval(wakeup_time).tv_sec);
 		
-	pr_info("%s: Timeout started for %llu minutes\n", WAKEFUNC,
+	pr_debug("%s: Timeout started for %llu minutes\n", WAKEFUNC,
 			wake_timeout);
 }
 
@@ -104,22 +103,24 @@ static void wakefunc_rtc_cancel(void)
 	wakefunc_triggered = false;
 	ret = alarm_cancel(&wakefunc_rtc);
 	if (ret)
-		pr_info("%s: Timeout canceled\n", WAKEFUNC);
+		pr_debug("%s: Timeout canceled\n", WAKEFUNC);
 	else
-		pr_info("%s: Nothing to cancel\n",
+		pr_debug("%s: Nothing to cancel\n",
 				WAKEFUNC);
 }
 
 
-static void wakefunc_rtc_callback(struct alarm *al)
+static enum alarmtimer_restart wakefunc_rtc_callback(struct alarm *al, ktime_t now)
 {
 	struct timeval ts;
-	ts = ktime_to_timeval(alarm_get_elapsed_realtime());
+	ts = ktime_to_timeval(now);
 
 	wake_pwrtrigger();
 	
 	pr_debug("%s: Time of alarm expiry: %ld\n", WAKEFUNC,
 			ts.tv_sec);
+
+	return ALARMTIMER_NORESTART;
 }
 
 
@@ -158,17 +159,18 @@ struct kobject *android_touch_kobj;
 EXPORT_SYMBOL_GPL(android_touch_kobj);
 #endif
 
-
 static int lcd_notifier_callback(struct notifier_block *this,
 				unsigned long event, void *data)
 {
 	switch (event) {
 	case LCD_EVENT_ON_START:
+		//display on
 		wakefunc_rtc_cancel();
 		break;
 	case LCD_EVENT_ON_END:
 		break;
 	case LCD_EVENT_OFF_START:
+		//display off
 		if (pwrkey_pressed == false && wakefunc_triggered == false && wake_timeout > 0) {
 			wakefunc_rtc_start();
 		}
@@ -182,7 +184,6 @@ static int lcd_notifier_callback(struct notifier_block *this,
 	return 0;
 }
 
-
 static int __init wake_timeout_init(void)
 {
 	int rc;
@@ -191,7 +192,7 @@ static int __init wake_timeout_init(void)
 		 WAKE_TIMEOUT_MAJOR_VERSION,
 		 WAKE_TIMEOUT_MINOR_VERSION);
 
-	alarm_init(&wakefunc_rtc, ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP,
+	alarm_init(&wakefunc_rtc, ALARM_REALTIME,
 			wakefunc_rtc_callback);
 
 	wake_pwrdev = input_allocate_device();
